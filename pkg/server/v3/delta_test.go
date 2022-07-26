@@ -155,36 +155,36 @@ func makeMockDeltaStream(t *testing.T) *mockDeltaStream {
 
 func makeDeltaResources() map[string]map[string]types.Resource {
 	return map[string]map[string]types.Resource{
-		rsrc.EndpointType: map[string]types.Resource{
+		rsrc.EndpointType: {
 			endpoint.GetClusterName(): endpoint,
 		},
-		rsrc.ClusterType: map[string]types.Resource{
+		rsrc.ClusterType: {
 			cluster.Name: cluster,
 		},
-		rsrc.RouteType: map[string]types.Resource{
+		rsrc.RouteType: {
 			route.Name: route,
 		},
-		rsrc.ScopedRouteType: map[string]types.Resource{
+		rsrc.ScopedRouteType: {
 			scopedRoute.Name: scopedRoute,
 		},
-		rsrc.VirtualHostType: map[string]types.Resource{
+		rsrc.VirtualHostType: {
 			virtualHost.Name: virtualHost,
 		},
-		rsrc.ListenerType: map[string]types.Resource{
+		rsrc.ListenerType: {
 			httpListener.Name:       httpListener,
 			httpScopedListener.Name: httpScopedListener,
 		},
-		rsrc.SecretType: map[string]types.Resource{
+		rsrc.SecretType: {
 			secret.Name: secret,
 		},
-		rsrc.RuntimeType: map[string]types.Resource{
+		rsrc.RuntimeType: {
 			runtime.Name: runtime,
 		},
-		rsrc.ExtensionConfigType: map[string]types.Resource{
+		rsrc.ExtensionConfigType: {
 			extensionConfig.Name: extensionConfig,
 		},
 		// Pass-through type (types without explicit handling)
-		opaqueType: map[string]types.Resource{
+		opaqueType: {
 			"opaque": opaque,
 		},
 	}
@@ -255,6 +255,7 @@ func TestDeltaResponseHandlers(t *testing.T) {
 			s := server.NewServer(context.Background(), config, server.CallbackFuncs{})
 
 			resp := makeMockDeltaStream(t)
+			// This is a wildcard request since we don't specify a list of resource subscriptions
 			resourceNames := []string{}
 			for resourceName := range config.deltaResources[typ] {
 				resourceNames = append(resourceNames, resourceName)
@@ -460,7 +461,7 @@ func TestDeltaCallbackError(t *testing.T) {
 func TestDeltaWildcardSubscriptions(t *testing.T) {
 	config := makeMockConfigWatcher()
 	config.deltaResources = map[string]map[string]types.Resource{
-		rsrc.EndpointType: map[string]types.Resource{
+		rsrc.EndpointType: {
 			"endpoints0": resource.MakeEndpoint("endpoints0", 1234),
 			"endpoints1": resource.MakeEndpoint("endpoints1", 1234),
 			"endpoints2": resource.MakeEndpoint("endpoints2", 1234),
@@ -612,5 +613,225 @@ func TestDeltaWildcardSubscriptions(t *testing.T) {
 		}
 		validateResponse(t, resp.sent, []string{"endpoints2"}, []string{"endpoints4"})
 	})
+}
 
+type testExtendedCallbacks struct {
+	server.CallbackFuncs
+	triggerType string
+	triggerName string
+}
+
+func (c testExtendedCallbacks) OnStreamDeltaResponseF(streamId int64, req *discovery.DeltaDiscoveryRequest, resp *discovery.DeltaDiscoveryResponse, updateTrigger func(typeURL string, resourceNames []string)) {
+	trigger := false
+	for _, res := range resp.GetResources() {
+		if res.Name == c.triggerName {
+			trigger = true
+			break
+		}
+	}
+	if trigger && req.TypeUrl == rsrc.ClusterType {
+		updateTrigger(c.triggerType, []string{"otherCluster"})
+	}
+}
+
+func TestDeltaCallbackTrigger(t *testing.T) {
+	config := makeMockConfigWatcher()
+	callback := testExtendedCallbacks{
+		triggerType: rsrc.ClusterType,
+		triggerName: clusterName,
+	}
+
+	validateResponse := func(t *testing.T, resp *mockDeltaStream, expectedType string, expectedResources []string) map[string]string {
+		t.Helper()
+		var response *discovery.DeltaDiscoveryResponse
+		select {
+		case <-time.After(5 * time.Second):
+			assert.Fail(t, "no response after 5s")
+			return nil
+		case response = <-resp.sent:
+		}
+		assert.Equal(t, expectedType, response.TypeUrl)
+		versionMap := map[string]string{}
+		if assert.Equal(t, len(expectedResources), len(response.Resources)) {
+			var names []string
+			for _, resource := range response.Resources {
+				names = append(names, resource.Name)
+				versionMap[resource.Name] = resource.Version
+			}
+			assert.ElementsMatch(t, names, expectedResources)
+		}
+		return versionMap
+	}
+
+	config.deltaResources = map[string]map[string]types.Resource{
+		rsrc.ClusterType: {
+			cluster.Name:   cluster,
+			"otherCluster": resource.MakeCluster(resource.Ads, "otherCluster"),
+			"thirdCluster": resource.MakeCluster(resource.Ads, "thirdCluster"),
+		},
+		rsrc.EndpointType: {
+			cluster.Name:   endpoint,
+			"otherCluster": resource.MakeEndpoint("otherCluster", 1234),
+		},
+	}
+
+	t.Run("Same url type", func(t *testing.T) {
+		resp := makeMockDeltaStream(t)
+		defer close(resp.recv)
+		s := server.NewServer(context.Background(), config, &callback)
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			assert.NoError(t, err)
+		}()
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{"otherCluster"},
+		}
+		validateResponse(t, resp, rsrc.ClusterType, []string{"otherCluster"})
+
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{"otherCluster"},
+		}
+
+		// This will not return as we already have it at the correct version
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{"thirdCluster"},
+		}
+		// Only return thirdCluster as otherCluster version has not changed
+		validateResponse(t, resp, rsrc.ClusterType, []string{"thirdCluster"})
+
+		// Now request clusterName, which will trigger the specific push
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{clusterName},
+		}
+		// The first response only includes the requested cluster
+		validateResponse(t, resp, rsrc.ClusterType, []string{clusterName})
+
+		// The second response also includes the triggered update
+		// It should ideally not return the initial resource, but sadly this doesn't properly work when using the same type
+		validateResponse(t, resp, rsrc.ClusterType, []string{clusterName, "otherCluster"})
+
+		assert.Equal(t, 0, config.deltaWatches)
+	})
+
+	callback.triggerType = rsrc.EndpointType
+	t.Run("Different url type, no existing watch", func(t *testing.T) {
+		resp := makeMockDeltaStream(t)
+		defer close(resp.recv)
+		s := server.NewServer(context.Background(), config, &callback)
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			assert.NoError(t, err)
+		}()
+
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{clusterName},
+		}
+		validateResponse(t, resp, rsrc.ClusterType, []string{clusterName})
+		assert.Equal(t, 0, config.deltaWatches)
+	})
+
+	t.Run("Different url type, existing watch", func(t *testing.T) {
+		resp := makeMockDeltaStream(t)
+		defer close(resp.recv)
+		s := server.NewServer(context.Background(), config, &callback)
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			assert.NoError(t, err)
+		}()
+
+		// Setup a watch for endpoints
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.EndpointType,
+			ResourceNamesSubscribe: []string{endpoint.ClusterName, "otherCluster"},
+		}
+		validateResponse(t, resp, rsrc.EndpointType, []string{endpoint.ClusterName, "otherCluster"})
+
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			TypeUrl:                rsrc.EndpointType,
+			ResponseNonce:          "2",
+			ResourceNamesSubscribe: nil,
+		}
+		// Watch is setup now with the current version known
+
+		// Same call as above, but this time with an existing watch on eps for "otherCluster"
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{clusterName},
+		}
+		validateResponse(t, resp, rsrc.ClusterType, []string{clusterName})
+		validateResponse(t, resp, rsrc.EndpointType, []string{"otherCluster"})
+		assert.Equal(t, 0, config.deltaWatches)
+	})
+
+	t.Run("Request for the triggered type is received later than the trigger", func(t *testing.T) {
+		resp := makeMockDeltaStream(t)
+		s := server.NewServer(context.Background(), config, &callback)
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			assert.NoError(t, err)
+		}()
+
+		// Initial request to know the versions
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                    node,
+			TypeUrl:                 rsrc.EndpointType,
+			ResourceNamesSubscribe:  []string{endpoint.ClusterName, "otherCluster"},
+			InitialResourceVersions: map[string]string{},
+		}
+		epVersions := validateResponse(t, resp, rsrc.EndpointType, []string{endpoint.ClusterName, "otherCluster"})
+
+		close(resp.recv)
+
+		// Reset the stream
+		resp = makeMockDeltaStream(t)
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			assert.NoError(t, err)
+		}()
+		defer close(resp.recv)
+
+		// Run a wildcard cluster request. No endpoint response will be triggered (as there is currently no request)
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:    node,
+			TypeUrl: rsrc.ClusterType,
+		}
+		validateResponse(t, resp, rsrc.ClusterType, []string{clusterName, "otherCluster", "thirdCluster"})
+		assert.Equal(t, 0, config.deltaWatches)
+
+		// Now create a watch for endpoints passing the correct version
+		// This should still trigger a response for "otherCluster" only as the update was triggered by the previous cluster request
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                    node,
+			TypeUrl:                 rsrc.EndpointType,
+			ResourceNamesSubscribe:  []string{endpoint.ClusterName, "otherCluster"},
+			InitialResourceVersions: epVersions,
+		}
+		// endpoint.ClusterName is not returned here as the version was the same
+		validateResponse(t, resp, rsrc.EndpointType, []string{"otherCluster"})
+
+		// Ensure further requests do not trigger unwanted updates
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			TypeUrl:                rsrc.EndpointType,
+			ResponseNonce:          "2",
+			ResourceNamesSubscribe: nil,
+		}
+		select {
+		case <-resp.sent:
+			assert.Fail(t, "received a response when no version has changed")
+		case <-time.After(100 * time.Millisecond):
+			// Pass
+		}
+	})
 }
