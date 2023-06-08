@@ -186,8 +186,8 @@ func (cache *LinearCache) respondDelta(request *DeltaRequest, value chan DeltaRe
 	// Only send a response if there were changes
 	if len(resp.Resources) > 0 || len(resp.RemovedResources) > 0 {
 		if cache.log != nil {
-			cache.log.Debugf("[linear cache] node: %s, sending delta response with resources: %v removed resources %v wildcard: %t",
-				request.GetNode().GetId(), resp.Resources, resp.RemovedResources, state.IsWildcard())
+			cache.log.Debugf("[linear cache] node: %s, sending delta response for typeURL %s with resources: %v removed resources: %v with wildcard: %t",
+				request.GetNode().GetId(), request.TypeUrl, GetResourceNames(resp.Resources), resp.RemovedResources, state.IsWildcard())
 		}
 		value <- resp
 		return resp
@@ -298,7 +298,7 @@ func (cache *LinearCache) GetResources() map[string]types.Resource {
 	return resources
 }
 
-func (cache *LinearCache) CreateWatch(request *Request, streamState stream.StreamState, value chan Response) func() {
+func (cache *LinearCache) CreateWatch(request *Request, _ stream.StreamState, value chan Response) func() {
 	if request.TypeUrl != cache.typeURL {
 		value <- nil
 		return nil
@@ -450,7 +450,7 @@ func (cache *LinearCache) nextDeltaWatchID() int64 {
 	return atomic.AddInt64(&cache.deltaWatchCount, 1)
 }
 
-func (cache *LinearCache) Fetch(ctx context.Context, request *Request) (Response, error) {
+func (cache *LinearCache) Fetch(context.Context, *Request) (Response, error) {
 	return nil, errors.New("not implemented")
 }
 

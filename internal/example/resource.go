@@ -11,6 +11,7 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+
 package example
 
 import (
@@ -24,6 +25,7 @@ import (
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	router "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -104,6 +106,7 @@ func makeRoute(routeName string, clusterName string) *route.RouteConfiguration {
 }
 
 func makeHTTPListener(listenerName string, route string) *listener.Listener {
+	routerConfig, _ := anypb.New(&router.Router{})
 	// HTTP filter configuration
 	manager := &hcm.HttpConnectionManager{
 		CodecType:  hcm.HttpConnectionManager_AUTO,
@@ -115,7 +118,8 @@ func makeHTTPListener(listenerName string, route string) *listener.Listener {
 			},
 		},
 		HttpFilters: []*hcm.HttpFilter{{
-			Name: wellknown.Router,
+			Name:       wellknown.Router,
+			ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: routerConfig},
 		}},
 	}
 	pbst, err := anypb.New(manager)

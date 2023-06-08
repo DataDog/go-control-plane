@@ -20,7 +20,7 @@ import (
 	cryptotls "crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	conf "github.com/envoyproxy/go-control-plane/pkg/server/config"
+	"github.com/envoyproxy/go-control-plane/pkg/server/sotw/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/test"
 	"github.com/envoyproxy/go-control-plane/pkg/test/resource/v3"
@@ -195,10 +197,17 @@ func main() {
 			},
 		}
 	}
-	srv := server.NewServer(context.Background(), configCache, cb)
+
+	opts := []conf.XDSOption{}
+	if mode == resource.Ads {
+		log.Println("enabling ordered ADS mode...")
+		// Enable resource ordering if we enter ADS mode.
+		opts = append(opts, sotw.WithOrderedADS())
+	}
+	srv := server.NewServer(context.Background(), configCache, cb, opts...)
 	als := &testv3.AccessLogService{}
 
-	if mode != "delta" {
+	if mode != resource.Delta {
 		vhdsHTTPListeners = 0
 	}
 
@@ -343,7 +352,7 @@ func callEcho() (int, int) {
 				ch <- err
 				return
 			}
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				resp.Body.Close()
 				ch <- err

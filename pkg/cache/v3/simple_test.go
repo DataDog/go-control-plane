@@ -342,9 +342,10 @@ func TestSnapshotCacheWatch(t *testing.T) {
 func TestConcurrentSetWatch(t *testing.T) {
 	c := cache.NewSnapshotCache(false, group{}, logger{t: t})
 	for i := 0; i < 50; i++ {
+		i := i
 		t.Run(fmt.Sprintf("worker%d", i), func(t *testing.T) {
 			t.Parallel()
-			id := fmt.Sprintf("%d", i%2)
+			id := t.Name()
 			value := make(chan cache.Response, 1)
 			if i < 25 {
 				snap := cache.Snapshot{}
@@ -358,7 +359,6 @@ func TestConcurrentSetWatch(t *testing.T) {
 					Node:    &core.Node{Id: id},
 					TypeUrl: rsrc.EndpointType,
 				}, streamState, value)
-
 				defer cancel()
 			}
 		})
@@ -520,6 +520,10 @@ type singleResourceSnapshot struct {
 }
 
 func (s *singleResourceSnapshot) GetVersion(typeURL string) string {
+	if typeURL != s.typeurl {
+		return ""
+	}
+
 	return s.version
 }
 
@@ -538,6 +542,7 @@ func (s *singleResourceSnapshot) GetResources(typeURL string) map[string]types.R
 	if typeURL != s.typeurl {
 		return nil
 	}
+
 	return map[string]types.Resource{
 		s.name: s.resource,
 	}
@@ -603,4 +608,35 @@ func TestSnapshotSingleResourceFetch(t *testing.T) {
 		anyDuration(time.Second),
 		protocmp.Transform()),
 	)
+}
+
+func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	c := cache.NewSnapshotCacheWithHeartbeating(ctx, false, cache.IDHash{}, nil, time.Millisecond)
+
+	// Create watch.
+	req := &cache.Request{
+		Node:          &core.Node{Id: "test"},
+		ResourceNames: []string{"rtds"},
+		TypeUrl:       rsrc.RuntimeType,
+	}
+	ss := stream.NewStreamState(false, map[string]string{"cluster": "abcdef"})
+	responder := make(chan cache.Response)
+	c.CreateWatch(req, ss, responder)
+
+	go func() {
+		// Wait for at least one heartbeat to occur, then set snapshot.
+		time.Sleep(time.Millisecond * 5)
+		srs := &singleResourceSnapshot{
+			version:  "version-one",
+			typeurl:  rsrc.RuntimeType,
+			name:     "one-second",
+			resource: durationpb.New(time.Second),
+		}
+		if err := c.SetSnapshot(ctx, "test", srs); err != nil {
+			t.Errorf("unexpected error setting snapshot %v", err)
+		}
+	}()
+
+	<-responder
 }

@@ -11,6 +11,7 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+
 package main
 
 import (
@@ -66,5 +67,5 @@ func main() {
 	ctx := context.Background()
 	cb := &test.Callbacks{Debug: l.Debug}
 	srv := server.NewServer(ctx, cache, cb)
-	example.RunServer(ctx, srv, port)
+	example.RunServer(srv, port)
 }

@@ -56,6 +56,10 @@ func (m *Dlb) validate(all bool) error {
 
 	var errors []error
 
+	// no validation rules for Id
+
+	// no validation rules for MaxRetries
+
 	if len(errors) > 0 {
 		return DlbMultiError(errors)
 	}
