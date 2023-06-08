@@ -621,7 +621,7 @@ type testExtendedCallbacks struct {
 	triggerName string
 }
 
-func (c testExtendedCallbacks) OnStreamDeltaResponseF(streamId int64, req *discovery.DeltaDiscoveryRequest, resp *discovery.DeltaDiscoveryResponse, updateTrigger func(typeURL string, resourceNames []string)) {
+func (c testExtendedCallbacks) OnStreamDeltaResponseF(_ int64, req *discovery.DeltaDiscoveryRequest, resp *discovery.DeltaDiscoveryResponse, updateTrigger func(typeURL string, resourceNames []string)) {
 	trigger := false
 	for _, res := range resp.GetResources() {
 		if res.Name == c.triggerName {

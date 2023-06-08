@@ -138,7 +138,7 @@ func (s *server) processDelta(str stream.DeltaStream, reqCh <-chan *discovery.De
 					if !ok {
 						// There's no existing watch
 						// Create a state to track resources we want to invalidate
-						// This watch will not have a request and won't be cancelled/watched until a proper request is received
+						// This watch will not have a request and won't be canceled/watched until a proper request is received
 						watch.state = stream.NewStreamState(false, nil)
 					} else {
 						watch.Cancel()
