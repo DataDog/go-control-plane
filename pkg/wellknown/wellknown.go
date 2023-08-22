@@ -43,6 +43,8 @@ const (
 	HealthCheck = "envoy.filters.http.health_check"
 	// Lua HTTP filter
 	Lua = "envoy.filters.http.lua"
+	// Header Rewrite HTTP filter
+	HeaderRewrite = "envoy.filters.http.header_rewrite"
 	// Squash HTTP filter
 	Squash = "envoy.filters.http.squash"
 	// HTTPExternalAuthorization HTTP filter
