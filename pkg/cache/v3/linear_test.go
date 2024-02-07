@@ -1476,7 +1476,7 @@ func TestLinearSotwVersion(t *testing.T) {
 		w := make(chan Response, 1)
 		_, err := cache.CreateWatch(req, subFromRequest(req), w)
 		require.NoError(t, err)
-		resp := verifyResponseResources(t, w, resource.EndpointType, "1d0dadc055487bf8", "a", "b")
+		resp := verifyResponseResources(t, w, resource.EndpointType, "f8fac96556140daa", "a", "b")
 		lastVersion, err = resp.GetVersion()
 		require.NoError(t, err)
 		assert.NotEmpty(t, lastVersion)
@@ -1513,7 +1513,7 @@ func TestLinearSotwVersion(t *testing.T) {
 		w := make(chan Response, 1)
 		_, err := cache.CreateWatch(req, subFromRequest(req), w)
 		require.NoError(t, err)
-		verifyResponseResources(t, w, resource.EndpointType, "test-prefix-1d0dadc055487bf8", "a", "b")
+		verifyResponseResources(t, w, resource.EndpointType, "test-prefix-"+lastVersion, "a", "b")
 	})
 
 	t.Run("watch opened with the same last version including prefix", func(t *testing.T) {
@@ -1543,7 +1543,7 @@ func TestLinearSotwVersion(t *testing.T) {
 
 		_ = cache.UpdateResource("e", &endpoint.ClusterLoadAssignment{ClusterName: "e"})
 		// Resources a and b are still at the proper version, so not returned
-		resp := verifyResponseResources(t, w, resource.EndpointType, "ef89d29eb6398b90", "e")
+		resp := verifyResponseResources(t, w, resource.EndpointType, "6ae65ee0b0c2bfa8", "e")
 		updateFromSotwResponse(resp, &sub, req)
 
 		w = make(chan Response, 1)
@@ -1558,12 +1558,12 @@ func TestLinearSotwVersion(t *testing.T) {
 			EndpointStaleAfter: durationpb.New(5 * time.Second),
 		}})
 		// Resources a and b are still at the proper version, so not returned
-		verifyResponseResources(t, w, resource.EndpointType, "51d88a339c93515b", "e")
+		verifyResponseResources(t, w, resource.EndpointType, "633e4f7cb4f55524", "e")
 
 		_ = cache.UpdateResource("e", &endpoint.ClusterLoadAssignment{ClusterName: "e"})
 
 		// Another watch created with the proper version does not trigger
-		req2 := buildRequest([]string{"a", "b", "e"}, "ef89d29eb6398b90")
+		req2 := buildRequest([]string{"a", "b", "e"}, "6ae65ee0b0c2bfa8")
 		sub2 := subFromRequest(req2)
 		w = make(chan Response, 1)
 		_, err = cache.CreateWatch(req2, sub2, w)
@@ -1577,7 +1577,7 @@ func TestLinearSotwVersion(t *testing.T) {
 		w := make(chan Response, 1)
 		_, err := cache.CreateWatch(req, subFromRequest(req), w)
 		require.NoError(t, err)
-		verifyResponseResources(t, w, resource.EndpointType, "be5530af715f4980", "a", "b", "c", "e")
+		verifyResponseResources(t, w, resource.EndpointType, "68113a35fda99df9", "a", "b", "c", "e")
 	})
 
 	t.Run("watch opened with the same last version and returning less resources", func(t *testing.T) {
@@ -1586,6 +1586,6 @@ func TestLinearSotwVersion(t *testing.T) {
 		w := make(chan Response, 1)
 		_, err := cache.CreateWatch(req, subFromRequest(req), w)
 		require.NoError(t, err)
-		verifyResponseResources(t, w, resource.EndpointType, "0aa479b0bd7e5474", "a")
+		verifyResponseResources(t, w, resource.EndpointType, "55876f045443ee06", "a")
 	})
 }

@@ -119,7 +119,9 @@ type LinearCache struct {
 	versionPrefix string
 
 	// useStableVersionsInSotw switches to a new version model for sotw watches.
-	// The version is then encoding the known resources of the subscription
+	// When activated, versions are stored in subscriptions using stable versions, and the response version
+	// is an hash of the returned versions to allow watch resumptions when reconnecting to the cache with a
+	// new subscription.
 	useStableVersionsInSotw bool
 
 	log log.Logger
@@ -279,21 +281,29 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, alwaysConsider
 }
 
 func computeSotwStableVersion(versionMap map[string]string) string {
+	// To enforce a stable hash we need to have an ordered vision of the map.
 	keys := make([]string, 0, len(versionMap))
 	for key := range versionMap {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
-	// Reuse the hash used on resources.
-	hasher := fnv.New64a()
+	mapHasher := fnv.New64()
+
+	buffer := make([]byte, 0, 8)
+	itemHasher := fnv.New64()
 	for _, key := range keys {
-		hasher.Write([]byte(key))
-		hasher.Write([]byte("/"))
-		hasher.Write([]byte(versionMap[key]))
-		hasher.Write([]byte("^"))
+		buffer = buffer[:0]
+		itemHasher.Reset()
+		itemHasher.Write([]byte(key))
+		mapHasher.Write(itemHasher.Sum(buffer))
+		buffer = buffer[:0]
+		itemHasher.Reset()
+		itemHasher.Write([]byte(versionMap[key]))
+		mapHasher.Write(itemHasher.Sum(buffer))
 	}
-	return hex.EncodeToString(hasher.Sum(nil))
+	buffer = buffer[:0]
+	return hex.EncodeToString(mapHasher.Sum(buffer))
 }
 
 func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, alwaysConsiderAllResources bool) (*RawResponse, error) {
@@ -307,7 +317,7 @@ func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, alwaysConside
 	}
 
 	// In sotw the list of resources to actually return depends on:
-	//  - whether the type requires full-state in each reply (e.g. lds, cds).
+	//  - whether the type requires full-state in each reply (lds and cds).
 	//  - whether the request is wildcard.
 	// resourcesToReturn will include all the resource names to reply based on the changes detected.
 	var resourcesToReturn []string
@@ -449,7 +459,7 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 			watch.Response <- response
 			cache.removeWatch(watchID, watch.subscription)
 		} else {
-			cache.log.Warnf("[Linear cache] Watch %d detected as triggered but no change was found", watchID)
+			cache.log.Infof("[Linear cache] Watch %d detected as triggered but no change was found", watchID)
 		}
 	}
 
@@ -463,7 +473,7 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 			watch.Response <- response
 			delete(cache.wildcardWatches.sotw, watchID)
 		} else {
-			cache.log.Warnf("[Linear cache] Wildcard watch %d detected as triggered but no change was found", watchID)
+			cache.log.Infof("[Linear cache] Wildcard watch %d detected as triggered but no change was found", watchID)
 		}
 	}
 
@@ -478,7 +488,7 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 			watch.Response <- response
 			cache.removeDeltaWatch(watchID, watch.subscription)
 		} else {
-			cache.log.Warnf("[Linear cache] Delta watch %d detected as triggered but no change was found", watchID)
+			cache.log.Infof("[Linear cache] Delta watch %d detected as triggered but no change was found", watchID)
 		}
 	}
 
@@ -492,7 +502,7 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 			watch.Response <- response
 			delete(cache.wildcardWatches.delta, watchID)
 		} else {
-			cache.log.Warnf("[Linear cache] Wildcard delta watch %d detected as triggered but no change was found", watchID)
+			cache.log.Infof("[Linear cache] Wildcard delta watch %d detected as triggered but no change was found", watchID)
 		}
 	}
 
