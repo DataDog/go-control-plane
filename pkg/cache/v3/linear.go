@@ -28,15 +28,37 @@ import (
 
 // cachedResource is used to track resources added by the user in the cache.
 // It contains the resource itself and its associated version (currently in two different modes).
-// TODO(valerian-roche): store serialized resource if already marshaled to compute the version.
 type cachedResource struct {
 	types.Resource
 
 	// cacheVersion is the version of the cache at the time of last update, used in sotw.
 	cacheVersion string
-	// resourceVersion is the version of the resource itself (built through stable marshaling).
-	// It is only set if computeResourceVersion is set to true on the cache.
-	resourceVersion string
+	// stableVersion is the version of the resource itself (a hash of its content after deterministic marshaling).
+	// It is lazy initialized and should be accessed through getStableVersion.
+	stableVersion string
+}
+
+func (c *cachedResource) getStableVersion() (string, error) {
+	if c.stableVersion != "" {
+		return c.stableVersion, nil
+	}
+
+	// TODO(valerian-roche): store serialized resource as part of the cachedResource
+	// to reuse it when marshaling the responses instead of remarshaling and recomputing the version then.
+	marshaledResource, err := MarshalResource(c.Resource)
+	if err != nil {
+		return "", err
+	}
+	c.stableVersion = HashResource(marshaledResource)
+	return c.stableVersion, nil
+}
+
+func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
+	if !useStableVersion {
+		return c.cacheVersion, nil
+	}
+
+	return c.getStableVersion()
 }
 
 type watches struct {
@@ -69,7 +91,7 @@ type LinearCache struct {
 	typeURL string
 
 	// resources contains all resources currently set in the cache and associated versions.
-	resources map[string]cachedResource
+	resources map[string]*cachedResource
 
 	// resourceWatches keeps track of watches currently opened specifically tracking a resource.
 	// It does not contain wildcard watches.
@@ -85,9 +107,6 @@ type LinearCache struct {
 	// versionPrefix is used to modify the version returned to clients, and can be used to uniquely identify
 	// cache instances and avoid issues of version reuse.
 	versionPrefix string
-
-	// areStableResourceVersionsComputed indicates whether the cache is currently computing and storing stable resource versions.
-	areStableResourceVersionsComputed bool
 
 	log log.Logger
 
@@ -112,7 +131,7 @@ func WithVersionPrefix(prefix string) LinearCacheOption {
 func WithInitialResources(resources map[string]types.Resource) LinearCacheOption {
 	return func(cache *LinearCache) {
 		for name, resource := range resources {
-			cache.resources[name] = cachedResource{
+			cache.resources[name] = &cachedResource{
 				Resource: resource,
 			}
 		}
@@ -125,21 +144,11 @@ func WithLogger(log log.Logger) LinearCacheOption {
 	}
 }
 
-// WithComputeStableVersions ensures the cache tracks the resources stable versions from the beginning,
-// avoiding the first watch stalling until the computation has been done on all resources.
-// If the cache is expected to handle delta watches, this option is fully beneficial.
-// If the cache is expected to only handle sotw watches, it is currently not needed and will increase CPU usage.
-func WithComputeStableVersions() LinearCacheOption {
-	return func(cache *LinearCache) {
-		cache.areStableResourceVersionsComputed = true
-	}
-}
-
 // NewLinearCache creates a new cache. See the comments on the struct definition.
 func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	out := &LinearCache{
 		typeURL:         typeURL,
-		resources:       make(map[string]cachedResource),
+		resources:       make(map[string]*cachedResource),
 		resourceWatches: make(map[string]watches),
 		wildcardWatches: newWatches(),
 		version:         0,
@@ -151,20 +160,12 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	}
 	for name, resource := range out.resources {
 		resource.cacheVersion = out.getVersion()
-		if out.areStableResourceVersionsComputed {
-			version, err := computeResourceStableVersion(resource.Resource)
-			if err != nil {
-				out.log.Errorf("failed to build stable versions for resource %s: %s", name, err)
-			} else {
-				resource.resourceVersion = version
-			}
-		}
 		out.resources[name] = resource
 	}
 	return out
 }
 
-func (cache *LinearCache) computeResourceChange(sub Subscription, ignoreReturnedResources, useStableVersion bool) (updated, removed []string) {
+func (cache *LinearCache) computeResourceChange(sub Subscription, ignoreReturnedResources, useStableVersion bool) (updated, removed []string, err error) {
 	var changedResources []string
 	var removedResources []string
 
@@ -174,20 +175,21 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, ignoreReturned
 		knownVersions = make(map[string]string)
 	}
 
-	getVersion := func(c cachedResource) string { return c.cacheVersion }
-	if useStableVersion {
-		getVersion = func(c cachedResource) string { return c.resourceVersion }
-	}
-
 	if sub.IsWildcard() {
 		for resourceName, resource := range cache.resources {
 			knownVersion, ok := knownVersions[resourceName]
 			if !ok {
 				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
 				changedResources = append(changedResources, resourceName)
-			} else if knownVersion != getVersion(resource) {
-				// The client knows an outdated version.
-				changedResources = append(changedResources, resourceName)
+			} else {
+				resourceVersion, err := resource.getVersion(useStableVersion)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
+				}
+				if knownVersion != resourceVersion {
+					// The client knows an outdated version.
+					changedResources = append(changedResources, resourceName)
+				}
 			}
 		}
 
@@ -215,9 +217,15 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, ignoreReturned
 			if !known {
 				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
 				changedResources = append(changedResources, resourceName)
-			} else if knownVersion != getVersion(res) {
-				// The client knows an outdated version.
-				changedResources = append(changedResources, resourceName)
+			} else {
+				resourceVersion, err := res.getVersion(useStableVersion)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
+				}
+				if knownVersion != resourceVersion {
+					// The client knows an outdated version.
+					changedResources = append(changedResources, resourceName)
+				}
 			}
 		}
 
@@ -230,14 +238,18 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, ignoreReturned
 		}
 	}
 
-	return changedResources, removedResources
+	return changedResources, removedResources, nil
 }
 
-func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, ignoreReturnedResources bool) *RawResponse {
-	changedResources, removedResources := cache.computeResourceChange(watch.subscription, ignoreReturnedResources, false)
+func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, ignoreReturnedResources bool) (*RawResponse, error) {
+	changedResources, removedResources, err := cache.computeResourceChange(watch.subscription, ignoreReturnedResources, false)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(changedResources) == 0 && len(removedResources) == 0 && !ignoreReturnedResources {
 		// Nothing changed.
-		return nil
+		return nil, nil
 	}
 
 	returnedVersions := make(map[string]string, len(watch.subscription.ReturnedResources()))
@@ -295,9 +307,9 @@ func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, ignoreReturne
 
 	if !ignoreReturnedResources && !ResourceRequiresFullStateInSotw(cache.typeURL) && len(resources) == 0 {
 		// If the request is not the initial one, and the type does not require full updates,
-		// do not return if noting is to be set.
+		// do not return if nothing is to be set.
 		// For full-state resources an empty response does have a semantic meaning.
-		return nil
+		return nil, nil
 	}
 
 	return &RawResponse{
@@ -306,14 +318,18 @@ func (cache *LinearCache) computeSotwResponse(watch ResponseWatch, ignoreReturne
 		ReturnedResources: returnedVersions,
 		Version:           cacheVersion,
 		Ctx:               context.Background(),
-	}
+	}, nil
 }
 
-func (cache *LinearCache) computeDeltaResponse(watch DeltaResponseWatch) *RawDeltaResponse {
-	changedResources, removedResources := cache.computeResourceChange(watch.subscription, false, true)
+func (cache *LinearCache) computeDeltaResponse(watch DeltaResponseWatch) (*RawDeltaResponse, error) {
+	changedResources, removedResources, err := cache.computeResourceChange(watch.subscription, false, true)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(changedResources) == 0 && len(removedResources) == 0 {
 		// Nothing changed.
-		return nil
+		return nil, nil
 	}
 
 	returnedVersions := make(map[string]string, len(watch.subscription.ReturnedResources()))
@@ -327,7 +343,11 @@ func (cache *LinearCache) computeDeltaResponse(watch DeltaResponseWatch) *RawDel
 	for _, resourceName := range changedResources {
 		resource := cache.resources[resourceName]
 		resources = append(resources, resource.Resource)
-		returnedVersions[resourceName] = resource.resourceVersion
+		version, err := resource.getStableVersion()
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute stable version of %s: %w", resourceName, err)
+		}
+		returnedVersions[resourceName] = version
 	}
 	// Cleanup resources no longer existing in the cache or no longer subscribed.
 	for _, resourceName := range removedResources {
@@ -341,10 +361,10 @@ func (cache *LinearCache) computeDeltaResponse(watch DeltaResponseWatch) *RawDel
 		NextVersionMap:    returnedVersions,
 		SystemVersionInfo: cacheVersion,
 		Ctx:               context.Background(),
-	}
+	}, nil
 }
 
-func (cache *LinearCache) notifyAll(modified []string) {
+func (cache *LinearCache) notifyAll(modified []string) error {
 	// Gather the list of watches impacted by the modified resources.
 	sotwWatches := make(map[uint64]ResponseWatch)
 	deltaWatches := make(map[uint64]DeltaResponseWatch)
@@ -359,7 +379,11 @@ func (cache *LinearCache) notifyAll(modified []string) {
 
 	// sotw watches
 	for watchID, watch := range sotwWatches {
-		response := cache.computeSotwResponse(watch, false)
+		response, err := cache.computeSotwResponse(watch, false)
+		if err != nil {
+			return err
+		}
+
 		if response != nil {
 			watch.Response <- response
 			cache.removeWatch(watchID, watch.subscription)
@@ -369,7 +393,11 @@ func (cache *LinearCache) notifyAll(modified []string) {
 	}
 
 	for watchID, watch := range cache.wildcardWatches.sotw {
-		response := cache.computeSotwResponse(watch, false)
+		response, err := cache.computeSotwResponse(watch, false)
+		if err != nil {
+			return err
+		}
+
 		if response != nil {
 			watch.Response <- response
 			delete(cache.wildcardWatches.sotw, watchID)
@@ -380,7 +408,11 @@ func (cache *LinearCache) notifyAll(modified []string) {
 
 	// delta watches
 	for watchID, watch := range deltaWatches {
-		response := cache.computeDeltaResponse(watch)
+		response, err := cache.computeDeltaResponse(watch)
+		if err != nil {
+			return err
+		}
+
 		if response != nil {
 			watch.Response <- response
 			cache.removeDeltaWatch(watchID, watch.subscription)
@@ -390,7 +422,11 @@ func (cache *LinearCache) notifyAll(modified []string) {
 	}
 
 	for watchID, watch := range cache.wildcardWatches.delta {
-		response := cache.computeDeltaResponse(watch)
+		response, err := cache.computeDeltaResponse(watch)
+		if err != nil {
+			return err
+		}
+
 		if response != nil {
 			watch.Response <- response
 			delete(cache.wildcardWatches.delta, watchID)
@@ -398,32 +434,24 @@ func (cache *LinearCache) notifyAll(modified []string) {
 			cache.log.Warnf("[Linear cache] Wildcard delta watch %d detected as triggered but no change was found", watchID)
 		}
 	}
+
+	return nil
 }
 
 func computeResourceStableVersion(res types.Resource) (string, error) {
-	// hash our version in here and build the version map
+	// TODO(valerian-roche): store serialized resource as part of the cachedResource
+	// to reuse it when marshaling the responses instead of remarshaling and recomputing the version then.
 	marshaledResource, err := MarshalResource(res)
 	if err != nil {
 		return "", err
 	}
-	v := HashResource(marshaledResource)
-	if v == "" {
-		return "", errors.New("failed to build resource version")
-	}
-	return v, nil
+	return HashResource(marshaledResource), nil
 }
 
 func (cache *LinearCache) addResourceToCache(name string, res types.Resource) error {
-	update := cachedResource{
+	update := &cachedResource{
 		Resource:     res,
 		cacheVersion: cache.getVersion(),
-	}
-	if cache.areStableResourceVersionsComputed {
-		version, err := computeResourceStableVersion(res)
-		if err != nil {
-			return err
-		}
-		update.resourceVersion = version
 	}
 	cache.resources[name] = update
 	return nil
@@ -442,9 +470,7 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 		return err
 	}
 
-	cache.notifyAll([]string{name})
-
-	return nil
+	return cache.notifyAll([]string{name})
 }
 
 // DeleteResource removes a resource in the collection.
@@ -455,8 +481,7 @@ func (cache *LinearCache) DeleteResource(name string) error {
 	cache.version++
 	delete(cache.resources, name)
 
-	cache.notifyAll([]string{name})
-	return nil
+	return cache.notifyAll([]string{name})
 }
 
 // UpdateResources updates/deletes a list of resources in the cache.
@@ -479,14 +504,11 @@ func (cache *LinearCache) UpdateResources(toUpdate map[string]types.Resource, to
 		modified = append(modified, name)
 	}
 
-	cache.notifyAll(modified)
-
-	return nil
+	return cache.notifyAll(modified)
 }
 
 // SetResources replaces current resources with a new set of resources.
-// This function is useful for wildcard xDS subscriptions.
-// This way watches that are subscribed to all resources are triggered only once regardless of how many resources are changed.
+// If only some resources are to be updated, UpdateResources is more efficient.
 func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -512,7 +534,9 @@ func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 		modified = append(modified, name)
 	}
 
-	cache.notifyAll(modified)
+	if err := cache.notifyAll(modified); err != nil {
+		cache.log.Errorf("Failed to notify watches: %s", err.Error())
+	}
 }
 
 // GetResources returns current resources stored in the cache
@@ -563,7 +587,12 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	response := cache.computeSotwResponse(watch, ignoreCurrentSubscriptionResources)
+	response, err := cache.computeSotwResponse(watch, ignoreCurrentSubscriptionResources)
+	if err != nil {
+		cache.log.Warnf("[linear cache] error computing watch response: %s", err)
+		return nil, fmt.Errorf("failed to compute the watch respnse: %w", err)
+	}
+
 	if response != nil {
 		cache.log.Debugf("[linear cache] replying to the watch with resources %v (subscription values %v, known %v)", response.GetReturnedResources(), sub.SubscribedResources(), sub.ReturnedResources())
 		watch.Response <- response
@@ -621,24 +650,12 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if !cache.areStableResourceVersionsComputed {
-		// If we had no previously open delta watches, we need to build the version map for the first time.
-		// The version map will not be destroyed when the last delta watch is removed.
-		// This avoids constantly rebuilding when only a few delta watches are open.
-		cache.areStableResourceVersionsComputed = true
-		cache.log.Infof("[linear cache] activating stable resource version computation for %s", cache.typeURL)
-
-		for name, cachedResource := range cache.resources {
-			version, err := computeResourceStableVersion(cachedResource.Resource)
-			if err != nil {
-				return func() {}, fmt.Errorf("failed to build stable versions for resource %s: %w", name, err)
-			}
-			cachedResource.resourceVersion = version
-			cache.resources[name] = cachedResource
-		}
+	response, err := cache.computeDeltaResponse(watch)
+	if err != nil {
+		cache.log.Warnf("[linear cache] error computing delta watch response: %s", err)
+		return nil, fmt.Errorf("failed to compute the watch respnse: %w", err)
 	}
 
-	response := cache.computeDeltaResponse(watch)
 	if response != nil {
 		cache.log.Debugf("[linear cache] replying to the delta watch (subscription values %v, known %v)", sub.SubscribedResources(), sub.ReturnedResources())
 		watch.Response <- response
@@ -702,7 +719,7 @@ func (cache *LinearCache) Fetch(context.Context, *Request) (Response, error) {
 	return nil, errors.New("not implemented")
 }
 
-// Number of resources currently on the cache.
+// NumResources returns the number of resources currently in the cache.
 // As GetResources is building a clone it is expensive to get metrics otherwise.
 func (cache *LinearCache) NumResources() int {
 	cache.mu.RLock()
@@ -710,14 +727,14 @@ func (cache *LinearCache) NumResources() int {
 	return len(cache.resources)
 }
 
-// NumDeltaWatches returns the number of active sotw watches for a resource name.
+// NumWatches returns the number of active sotw watches for a resource name.
 func (cache *LinearCache) NumWatches(name string) int {
 	cache.mu.RLock()
 	defer cache.mu.RUnlock()
 	return len(cache.resourceWatches[name].sotw) + len(cache.wildcardWatches.sotw)
 }
 
-// NumDeltaWatches returns the number of active delta watches for a resource name.
+// NumDeltaWatchesForResource returns the number of active delta watches for a resource name.
 func (cache *LinearCache) NumDeltaWatchesForResource(name string) int {
 	cache.mu.RLock()
 	defer cache.mu.RUnlock()
