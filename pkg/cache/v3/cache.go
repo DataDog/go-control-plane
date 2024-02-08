@@ -111,7 +111,11 @@ type Response interface {
 	GetRequest() *discovery.DiscoveryRequest
 
 	// Get the version in the Response.
+	// Deprecated: use GetResponseVersion instead
 	GetVersion() (string, error)
+
+	// Get the version in the Response.
+	GetResponseVersion() string
 
 	// GetReturnedResources returns the map of resources and their versions returned in the subscription.
 	// It may include more resources than directly set in the response to consider the full state of the client.
@@ -132,11 +136,20 @@ type DeltaResponse interface {
 	GetDeltaRequest() *discovery.DeltaDiscoveryRequest
 
 	// Get the version in the DeltaResponse. This field is generally used for debugging purposes as noted by the Envoy documentation.
+	// Deprecated: use GetVersion instead
 	GetSystemVersion() (string, error)
+
+	// Get the version in the DeltaResponse. This field is generally used for debugging purposes as noted by the Envoy documentation.
+	GetResponseVersion() string
 
 	// Get the version map of the internal cache.
 	// The version map consists of updated version mappings after this response is applied
+	// Deprecated: use GetReturnedResources instead
 	GetNextVersionMap() map[string]string
+
+	// Get the version map of the internal cache.
+	// The version map consists of updated version mappings after this response is applied.
+	GetReturnedResources() map[string]string
 
 	// Get the context provided during response creation
 	GetContext() context.Context
@@ -183,7 +196,7 @@ type RawDeltaResponse struct {
 	SystemVersionInfo string
 
 	// Resources to be included in the response.
-	Resources []types.Resource
+	Resources []types.ResourceWithTTL
 
 	// RemovedResources is a list of resource aliases which should be dropped by the consuming client.
 	RemovedResources []string
@@ -290,8 +303,8 @@ func (r *RawDeltaResponse) GetDeltaDiscoveryResponse() (*discovery.DeltaDiscover
 		marshaledResources := make([]*discovery.Resource, len(r.Resources))
 
 		for i, resource := range r.Resources {
-			name := GetResourceName(resource)
-			marshaledResource, err := MarshalResource(resource)
+			name := GetResourceName(resource.Resource)
+			marshaledResource, err := MarshalResource(resource.Resource)
 			if err != nil {
 				return nil, err
 			}
@@ -336,17 +349,34 @@ func (r *RawDeltaResponse) GetDeltaRequest() *discovery.DeltaDiscoveryRequest {
 }
 
 // GetVersion returns the response version.
+// Deprecated: use GetResponseVersion instead
 func (r *RawResponse) GetVersion() (string, error) {
-	return r.Version, nil
+	return r.GetResponseVersion(), nil
+}
+
+// GetVersion returns the response version.
+func (r *RawResponse) GetResponseVersion() string {
+	return r.Version
 }
 
 // GetSystemVersion returns the raw SystemVersion
+// Deprecated: use GetResponseVersion instead
 func (r *RawDeltaResponse) GetSystemVersion() (string, error) {
-	return r.SystemVersionInfo, nil
+	return r.GetResponseVersion(), nil
+}
+
+func (r *RawDeltaResponse) GetResponseVersion() string {
+	return r.SystemVersionInfo
 }
 
 // NextVersionMap returns the version map which consists of updated version mappings after this response is applied
+// Deprecated: use GetReturnedResources instead
 func (r *RawDeltaResponse) GetNextVersionMap() map[string]string {
+	return r.GetReturnedResources()
+}
+
+// GetReturnedResources returns the version map which consists of updated version mappings after this response is applied
+func (r *RawDeltaResponse) GetReturnedResources() map[string]string {
 	return r.NextVersionMap
 }
 
@@ -403,6 +433,7 @@ func (r *DeltaPassthroughResponse) GetDeltaRequest() *discovery.DeltaDiscoveryRe
 }
 
 // GetVersion returns the response version.
+// Deprecated: use GetResponseVersion instead
 func (r *PassthroughResponse) GetVersion() (string, error) {
 	discoveryResponse, _ := r.GetDiscoveryResponse()
 	if discoveryResponse != nil {
@@ -411,11 +442,21 @@ func (r *PassthroughResponse) GetVersion() (string, error) {
 	return "", fmt.Errorf("DiscoveryResponse is nil")
 }
 
+// GetResponseVersion returns the response version, or empty if not set.
+func (r *PassthroughResponse) GetResponseVersion() string {
+	discoveryResponse, _ := r.GetDiscoveryResponse()
+	if discoveryResponse != nil {
+		return discoveryResponse.GetVersionInfo()
+	}
+	return ""
+}
+
 func (r *PassthroughResponse) GetContext() context.Context {
 	return r.ctx
 }
 
 // GetSystemVersion returns the response version.
+// Deprecated: use GetResponseVersion instead
 func (r *DeltaPassthroughResponse) GetSystemVersion() (string, error) {
 	deltaDiscoveryResponse, _ := r.GetDeltaDiscoveryResponse()
 	if deltaDiscoveryResponse != nil {
@@ -424,8 +465,23 @@ func (r *DeltaPassthroughResponse) GetSystemVersion() (string, error) {
 	return "", fmt.Errorf("DeltaDiscoveryResponse is nil")
 }
 
+// GetResponseVersion returns the response version, or empty if not set.
+func (r *DeltaPassthroughResponse) GetResponseVersion() string {
+	deltaDiscoveryResponse, _ := r.GetDeltaDiscoveryResponse()
+	if deltaDiscoveryResponse != nil {
+		return deltaDiscoveryResponse.GetSystemVersionInfo()
+	}
+	return ""
+}
+
 // NextVersionMap returns the version map from a DeltaPassthroughResponse
+// Deprecated: use GetReturnedResources instead
 func (r *DeltaPassthroughResponse) GetNextVersionMap() map[string]string {
+	return r.GetReturnedResources()
+}
+
+// GetReturnedResources returns the version map from a DeltaPassthroughResponse
+func (r *DeltaPassthroughResponse) GetReturnedResources() map[string]string {
 	return r.NextVersionMap
 }
 
