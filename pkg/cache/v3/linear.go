@@ -69,17 +69,21 @@ func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
 }
 
 type watch interface {
-	// Only used for statistics
+	// isDelta indicates whether the watch is a delta one.
+	// It should not be used to take functional decisions, but is still currently used pending final changes.
+	// It can be used to generate statistics.
 	isDelta() bool
-	// If set, versions returneed in the response will be built using stable versions
-	// instead of cache update versions.
+	// useStableVersion indicates whether versions returned in the response are built using stable versions instead of cache update versions.
 	useStableVersion() bool
-	// If set, all currently existing resources matching the request will be returned in the response,
-	// even if not modified.
+	// sendFullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
+	// As a consequence, sending a response with no resources has a functional meaning of no matching resources available.
 	sendFullStateResponses() bool
 
 	getSubscription() Subscription
-	buildResponse(updatedResources []types.ResourceWithTTL, _ []string, returnedVersions map[string]string, version string) WatchResponse
+	// buildResponse computes the actual WatchResponse object to be sent on the watch.
+	buildResponse(updatedResources []types.ResourceWithTTL, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
+	// sendResponse sends the response for the watch.
+	// It must be called at most once.
 	sendResponse(resp WatchResponse)
 }
 

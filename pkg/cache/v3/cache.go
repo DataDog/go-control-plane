@@ -104,17 +104,25 @@ type Cache interface {
 
 // Response is a wrapper around Envoy's DiscoveryResponse.
 type Response interface {
-	// Get the Constructed DiscoveryResponse
+	// GetDiscoveryResponse returns the Constructed DiscoveryResponse.
 	GetDiscoveryResponse() (*discovery.DiscoveryResponse, error)
 
-	// Get the original Request for the Response.
+	// GetRequest returns the request that created the watch that we're now responding to.
+	// This is provided to allow the caller to correlate the response with a request.
+	// Generally this will be the latest request seen on the stream for the specific type.
 	GetRequest() *discovery.DiscoveryRequest
 
-	// Get the version in the Response.
+	// GetVersion returns the version in the Response.
+	// The version can be a property of the resources, allowing for optimizations in subsequent calls,
+	// or simply an internal property of the cache which can be used for debugging.
+	// The cache implementation should be able to determine if it can provide such optimization.
 	// Deprecated: use GetResponseVersion instead
 	GetVersion() (string, error)
 
-	// Get the version in the Response.
+	// GetResponseVersion returns the version in the Response.
+	// The version can be a property of the resources, allowing for optimizations in subsequent calls,
+	// or simply an internal property of the cache which can be used for debugging.
+	// The cache implementation should be able to determine if it can provide such optimization.
 	GetResponseVersion() string
 
 	// GetReturnedResources returns the map of resources and their versions returned in the subscription.
@@ -122,36 +130,41 @@ type Response interface {
 	// The caller is expected to provide this unchanged to the next call to CreateWatch as part of the subscription.
 	GetReturnedResources() map[string]string
 
-	// Get the context provided during response creation.
+	// GetContext returns the context provided during response creation.
 	GetContext() context.Context
 }
 
-// DeltaResponse is a wrapper around Envoy's DeltaDiscoveryResponse
+// DeltaResponse is a wrapper around Envoy's DeltaDiscoveryResponse.
 type DeltaResponse interface {
-	// Get the constructed DeltaDiscoveryResponse
+	// GetDeltaDiscoveryResponse returns the constructed DeltaDiscoveryResponse.
 	GetDeltaDiscoveryResponse() (*discovery.DeltaDiscoveryResponse, error)
 
-	// Get the request that created the watch that we're now responding to. This is provided to allow the caller to correlate the
-	// response with a request. Generally this will be the latest request seen on the stream for the specific type.
+	// GetDeltaRequest returns the request that created the watch that we're now responding to.
+	// This is provided to allow the caller to correlate the response with a request.
+	// Generally this will be the latest request seen on the stream for the specific type.
 	GetDeltaRequest() *discovery.DeltaDiscoveryRequest
 
-	// Get the version in the DeltaResponse. This field is generally used for debugging purposes as noted by the Envoy documentation.
-	// Deprecated: use GetVersion instead
+	// GetSystemVersion returns the version in the DeltaResponse.
+	// The version in delta response is not indicative of the resources included,
+	// but an internal property of the cache which can be used for debugging.
+	// Deprecated: use GetResponseVersion instead
 	GetSystemVersion() (string, error)
 
-	// Get the version in the DeltaResponse. This field is generally used for debugging purposes as noted by the Envoy documentation.
+	// GetResponseVersion returns the version in the DeltaResponse.
+	// The version in delta response is not indicative of the resources included,
+	// but an internal property of the cache which can be used for debugging.
 	GetResponseVersion() string
 
-	// Get the version map of the internal cache.
-	// The version map consists of updated version mappings after this response is applied
+	// GetNextVersionMap provides the version map of the internal cache.
+	// The version map consists of updated version mappings after this response is applied.
 	// Deprecated: use GetReturnedResources instead
 	GetNextVersionMap() map[string]string
 
-	// Get the version map of the internal cache.
+	// GetReturnedResources provides the version map of the internal cache.
 	// The version map consists of updated version mappings after this response is applied.
 	GetReturnedResources() map[string]string
 
-	// Get the context provided during response creation
+	// GetContext returns the context provided during response creation.
 	GetContext() context.Context
 }
 
@@ -201,7 +214,7 @@ type RawDeltaResponse struct {
 	// RemovedResources is a list of resource aliases which should be dropped by the consuming client.
 	RemovedResources []string
 
-	// NextVersionMap consists of updated version mappings after this response is applied
+	// NextVersionMap consists of updated version mappings after this response is applied.
 	NextVersionMap map[string]string
 
 	// Context provided at the time of response creation. This allows associating additional
@@ -343,7 +356,7 @@ func (r *RawResponse) GetContext() context.Context {
 	return r.Ctx
 }
 
-// GetDeltaRequest returns the original DeltaRequest
+// GetDeltaRequest returns the original DeltaRequest.
 func (r *RawDeltaResponse) GetDeltaRequest() *discovery.DeltaDiscoveryRequest {
 	return r.DeltaRequest
 }
@@ -354,28 +367,29 @@ func (r *RawResponse) GetVersion() (string, error) {
 	return r.GetResponseVersion(), nil
 }
 
-// GetVersion returns the response version.
+// GetResponseVersion returns the response version.
 func (r *RawResponse) GetResponseVersion() string {
 	return r.Version
 }
 
-// GetSystemVersion returns the raw SystemVersion
+// GetSystemVersion returns the raw SystemVersion.
 // Deprecated: use GetResponseVersion instead
 func (r *RawDeltaResponse) GetSystemVersion() (string, error) {
 	return r.GetResponseVersion(), nil
 }
 
+// GetResponseVersion returns the response version.
 func (r *RawDeltaResponse) GetResponseVersion() string {
 	return r.SystemVersionInfo
 }
 
-// NextVersionMap returns the version map which consists of updated version mappings after this response is applied
+// NextVersionMap returns the version map which consists of updated version mappings after this response is applied.
 // Deprecated: use GetReturnedResources instead
 func (r *RawDeltaResponse) GetNextVersionMap() map[string]string {
 	return r.GetReturnedResources()
 }
 
-// GetReturnedResources returns the version map which consists of updated version mappings after this response is applied
+// GetReturnedResources returns the version map which consists of updated version mappings after this response is applied.
 func (r *RawDeltaResponse) GetReturnedResources() map[string]string {
 	return r.NextVersionMap
 }
@@ -422,12 +436,12 @@ func (r *DeltaPassthroughResponse) GetDeltaDiscoveryResponse() (*discovery.Delta
 	return r.DeltaDiscoveryResponse, nil
 }
 
-// GetRequest returns the original Discovery Request
+// GetRequest returns the original Discovery Request.
 func (r *PassthroughResponse) GetRequest() *discovery.DiscoveryRequest {
 	return r.Request
 }
 
-// GetDeltaRequest returns the original Delta Discovery Request
+// GetDeltaRequest returns the original Delta Discovery Request.
 func (r *DeltaPassthroughResponse) GetDeltaRequest() *discovery.DeltaDiscoveryRequest {
 	return r.DeltaRequest
 }
@@ -474,13 +488,13 @@ func (r *DeltaPassthroughResponse) GetResponseVersion() string {
 	return ""
 }
 
-// NextVersionMap returns the version map from a DeltaPassthroughResponse
+// NextVersionMap returns the version map from a DeltaPassthroughResponse.
 // Deprecated: use GetReturnedResources instead
 func (r *DeltaPassthroughResponse) GetNextVersionMap() map[string]string {
 	return r.GetReturnedResources()
 }
 
-// GetReturnedResources returns the version map from a DeltaPassthroughResponse
+// GetReturnedResources returns the version map from a DeltaPassthroughResponse.
 func (r *DeltaPassthroughResponse) GetReturnedResources() map[string]string {
 	return r.NextVersionMap
 }

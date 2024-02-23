@@ -97,20 +97,16 @@ func computeSotwStableVersion(versionMap map[string]string) string {
 
 	mapHasher := fnv.New64()
 
-	buffer := make([]byte, 0, 8)
 	itemHasher := fnv.New64()
 	for _, key := range keys {
-		buffer = buffer[:0]
 		itemHasher.Reset()
 		itemHasher.Write([]byte(key))
-		mapHasher.Write(itemHasher.Sum(buffer))
-		buffer = buffer[:0]
+		mapHasher.Write(itemHasher.Sum(nil))
 		itemHasher.Reset()
 		itemHasher.Write([]byte(versionMap[key]))
-		mapHasher.Write(itemHasher.Sum(buffer))
+		mapHasher.Write(itemHasher.Sum(nil))
 	}
-	buffer = buffer[:0]
-	return hex.EncodeToString(mapHasher.Sum(buffer))
+	return hex.EncodeToString(mapHasher.Sum(nil))
 }
 
 type WatchResponse interface {
@@ -129,8 +125,10 @@ type ResponseWatch struct {
 	// Subscription stores the current client subscription state.
 	subscription Subscription
 
+	// enableStableVersion indicates whether versions returned in the response are built using stable versions instead of cache update versions.
 	enableStableVersion bool
 
+	// fullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
 	fullStateResponses bool
 }
 
