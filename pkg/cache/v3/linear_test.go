@@ -1293,7 +1293,7 @@ func TestLinearSotwNonWildcard(t *testing.T) {
 		assert.Len(t, cache.resourceWatches["c"], 1)
 		assert.Len(t, cache.resourceWatches["b"], 1)
 		c3()
-		assert.Len(t, cache.resourceWatches["b"], 0)
+		assert.Empty(t, cache.resourceWatches["b"])
 
 		// Remove a resource from 2 (was a, c, d)
 		updateReqResources(2, []string{"a", "d"})
@@ -1419,7 +1419,7 @@ func TestLinearSotwNonWildcard(t *testing.T) {
 		assert.Len(t, cache.resourceWatches["c"], 1)
 		assert.Len(t, cache.resourceWatches["b"], 1)
 		c3()
-		assert.Len(t, cache.resourceWatches["b"], 0)
+		assert.Empty(t, cache.resourceWatches["b"])
 
 		// Remove a resource from 2 (was a, c, d)
 		updateReqResources(2, []string{"a", "d"})
