@@ -1,4 +1,4 @@
-package cache_test
+package cache
 
 import (
 	"testing"
@@ -12,7 +12,6 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
-	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 )
 
@@ -21,8 +20,13 @@ const (
 )
 
 func TestResponseGetDiscoveryResponse(t *testing.T) {
-	routes := []types.ResourceWithTTL{{Resource: &route.RouteConfiguration{Name: resourceName}}}
-	resp := cache.RawResponse{
+	routes := []returnedResource{{
+		name: resourceName,
+		ResourceWithTTL: types.ResourceWithTTL{
+			Resource: &route.RouteConfiguration{Name: resourceName},
+		},
+	}}
+	resp := RawResponse{
 		Request:   &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 		Version:   "v",
 		Resources: routes,
@@ -52,7 +56,7 @@ func TestPassthroughResponseGetDiscoveryResponse(t *testing.T) {
 		Resources:   []*anypb.Any{rsrc},
 		VersionInfo: "v",
 	}
-	resp := cache.PassthroughResponse{
+	resp := PassthroughResponse{
 		Request:           &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 		DiscoveryResponse: dr,
 	}
@@ -70,8 +74,13 @@ func TestPassthroughResponseGetDiscoveryResponse(t *testing.T) {
 }
 
 func TestHeartbeatResponseGetDiscoveryResponse(t *testing.T) {
-	routes := []types.ResourceWithTTL{{Resource: &route.RouteConfiguration{Name: resourceName}}}
-	resp := cache.RawResponse{
+	routes := []returnedResource{{
+		name: resourceName,
+		ResourceWithTTL: types.ResourceWithTTL{
+			Resource: &route.RouteConfiguration{Name: resourceName},
+		},
+	}}
+	resp := RawResponse{
 		Request:   &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 		Version:   "v",
 		Resources: routes,

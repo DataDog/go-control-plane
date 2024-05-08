@@ -26,48 +26,6 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/log"
 )
 
-// cachedResource is used to track resources added by the user in the cache.
-// It contains the resource itself and its associated version (currently in two different modes).
-type cachedResource struct {
-	types.Resource
-
-	// cacheVersion is the version of the cache at the time of last update, used in sotw.
-	cacheVersion string
-	// stableVersion is the version of the resource itself (a hash of its content after deterministic marshaling).
-	// It is lazy initialized and should be accessed through getStableVersion.
-	stableVersion string
-}
-
-func newCachedResource(res types.Resource, cacheVersion string) *cachedResource {
-	return &cachedResource{
-		Resource:     res,
-		cacheVersion: cacheVersion,
-	}
-}
-
-func (c *cachedResource) getStableVersion() (string, error) {
-	if c.stableVersion != "" {
-		return c.stableVersion, nil
-	}
-
-	// TODO(valerian-roche): store serialized resource as part of the cachedResource
-	// to reuse it when marshaling the responses instead of remarshaling and recomputing the version then.
-	marshaledResource, err := MarshalResource(c.Resource)
-	if err != nil {
-		return "", err
-	}
-	c.stableVersion = HashResource(marshaledResource)
-	return c.stableVersion, nil
-}
-
-func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
-	if !useStableVersion {
-		return c.cacheVersion, nil
-	}
-
-	return c.getStableVersion()
-}
-
 type watch interface {
 	// isDelta indicates whether the watch is a delta one.
 	// It should not be used to take functional decisions, but is still currently used pending final changes.
@@ -81,7 +39,7 @@ type watch interface {
 
 	getSubscription() Subscription
 	// buildResponse computes the actual WatchResponse object to be sent on the watch.
-	buildResponse(updatedResources []types.ResourceWithTTL, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
+	buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
 	// sendResponse sends the response for the watch.
 	// It must be called at most once.
 	sendResponse(resp WatchResponse)
@@ -156,7 +114,7 @@ func WithInitialResources(resources map[string]types.Resource) LinearCacheOption
 	return func(cache *LinearCache) {
 		for name, resource := range resources {
 			cache.resources[name] = &cachedResource{
-				Resource: resource,
+				ResourceWithTTL: types.ResourceWithTTL{Resource: resource},
 			}
 		}
 	}
@@ -335,10 +293,10 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 		returnedVersions[resourceName] = version
 	}
 
-	resources := make([]types.ResourceWithTTL, 0, len(resourcesToReturn))
+	resources := make([]*cachedResource, 0, len(resourcesToReturn))
 	for _, resourceName := range resourcesToReturn {
 		cachedResource := cache.resources[resourceName]
-		resources = append(resources, types.ResourceWithTTL{Resource: cachedResource.Resource})
+		resources = append(resources, cachedResource)
 		version, err := cachedResource.getVersion(watch.useStableVersion())
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
@@ -410,7 +368,7 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 	defer cache.mu.Unlock()
 
 	cache.version++
-	cache.resources[name] = newCachedResource(res, cache.getVersion())
+	cache.resources[name] = newCachedResource(name, res, cache.getVersion())
 
 	return cache.notifyAll([]string{name})
 }
@@ -437,7 +395,7 @@ func (cache *LinearCache) UpdateResources(toUpdate map[string]types.Resource, to
 	version := cache.getVersion()
 	modified := make([]string, 0, len(toUpdate)+len(toDelete))
 	for name, resource := range toUpdate {
-		cache.resources[name] = newCachedResource(resource, version)
+		cache.resources[name] = newCachedResource(name, resource, version)
 		modified = append(modified, name)
 	}
 	for _, name := range toDelete {
@@ -470,7 +428,7 @@ func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 	// In delta and if stable versions are used for sotw, identical resources will not trigger watches.
 	// In sotw without stable versions used, all those resources will trigger watches, even if identical.
 	for name, resource := range resources {
-		cache.resources[name] = newCachedResource(resource, version)
+		cache.resources[name] = newCachedResource(name, resource, version)
 		modified = append(modified, name)
 	}
 

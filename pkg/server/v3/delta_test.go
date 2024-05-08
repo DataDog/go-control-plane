@@ -79,12 +79,14 @@ func (config *mockConfigWatcher) CreateDeltaWatch(req *discovery.DeltaDiscoveryR
 	}
 
 	if len(filtered)+len(toRemove) > 0 {
-		out <- &cache.RawDeltaResponse{
-			DeltaRequest:      req,
-			Resources:         filtered,
-			RemovedResources:  toRemove,
-			SystemVersionInfo: "",
-			NextVersionMap:    nextVersionMap,
+		out <- &cache.DeltaPassthroughResponse{
+			DeltaRequest:   req,
+			NextVersionMap: nextVersionMap,
+			DeltaDiscoveryResponse: &discovery.DeltaDiscoveryResponse{
+				TypeUrl:          req.GetTypeUrl(),
+				Resources:        marshalDiscoveryResources(filtered),
+				RemovedResources: toRemove,
+			},
 		}
 	} else {
 		config.deltaWatches++

@@ -139,7 +139,7 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 				if gotVersion, _ := out.GetVersion(); gotVersion != fixture.version {
 					t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 				}
-				if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
+				if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
 					t.Errorf("get resources %v, want %v", out.(*cache.RawResponse).Resources, snapshotWithTTL.GetResourcesAndTTL(typ))
 				}
 
@@ -173,11 +173,11 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 					if gotVersion, _ := out.GetVersion(); gotVersion != fixture.version {
 						t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 					}
-					if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
+					if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
 						t.Errorf("get resources %v, want %v", out.(*cache.RawResponse).Resources, snapshotWithTTL.GetResources(typ))
 					}
 
-					if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
+					if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshotWithTTL.GetResourcesAndTTL(typ)) {
 						t.Errorf("get resources %v, want %v", out.(*cache.RawResponse).Resources, snapshotWithTTL.GetResources(typ))
 					}
 
@@ -254,7 +254,7 @@ func TestSnapshotCache(t *testing.T) {
 				if gotVersion, _ := out.GetVersion(); gotVersion != fixture.version {
 					t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 				}
-				if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshot.GetResourcesAndTTL(typ)) {
+				if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshot.GetResourcesAndTTL(typ)) {
 					t.Errorf("get resources %v, want %v", out.(*cache.RawResponse).Resources, snapshot.GetResourcesAndTTL(typ))
 				}
 			case <-time.After(time.Second):
@@ -318,7 +318,7 @@ func TestSnapshotCacheWatch(t *testing.T) {
 					t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 				}
 				snapshot := fixture.snapshot()
-				if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshot.GetResourcesAndTTL(typ)) {
+				if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshot.GetResourcesAndTTL(typ)) {
 					t.Errorf("get resources %v, want %v", out.(*cache.RawResponse).Resources, snapshot.GetResourcesAndTTL(typ))
 				}
 				returnedResources := make(map[string]string)
@@ -362,7 +362,7 @@ func TestSnapshotCacheWatch(t *testing.T) {
 		if gotVersion, _ := out.GetVersion(); gotVersion != fixture.version2 {
 			t.Errorf("got version %q, want %q", gotVersion, fixture.version2)
 		}
-		if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshot2.Resources[types.Endpoint].Items) {
+		if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshot2.Resources[types.Endpoint].Items) {
 			t.Errorf("got resources %v, want %v", out.(*cache.RawResponse).Resources, snapshot2.Resources[types.Endpoint].Items)
 		}
 	case <-time.After(time.Second):
@@ -495,7 +495,7 @@ func TestSnapshotCreateWatchWithResourcePreviouslyNotRequested(t *testing.T) {
 			t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 		}
 		want := map[string]types.ResourceWithTTL{clusterName: snapshot2.Resources[types.Endpoint].Items[clusterName]}
-		if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), want) {
+		if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), want) {
 			t.Errorf("got resources %v, want %v", out.(*cache.RawResponse).Resources, want)
 		}
 	case <-time.After(time.Second):
@@ -519,7 +519,7 @@ func TestSnapshotCreateWatchWithResourcePreviouslyNotRequested(t *testing.T) {
 		if gotVersion, _ := out.GetVersion(); gotVersion != fixture.version {
 			t.Errorf("got version %q, want %q", gotVersion, fixture.version)
 		}
-		if !reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).Resources), snapshot2.Resources[types.Endpoint].Items) {
+		if !reflect.DeepEqual(cache.IndexReturnedResourcesByName(out.(*cache.RawResponse).Resources), snapshot2.Resources[types.Endpoint].Items) {
 			t.Errorf("got resources %v, want %v", out.(*cache.RawResponse).Resources, snapshot2.Resources[types.Endpoint].Items)
 		}
 	case <-time.After(time.Second):

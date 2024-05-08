@@ -209,14 +209,14 @@ func checkTotalWatchCount(t *testing.T, c *LinearCache, count int) {
 func checkStableVersionsAreNotComputed(t *testing.T, c *LinearCache, resources ...string) {
 	t.Helper()
 	for _, res := range resources {
-		assert.Empty(t, c.resources[res].stableVersion, "stable version not set on resource %s", res)
+		assert.Empty(t, c.resources[res].resourceVersion, "stable version not set on resource %s", res)
 	}
 }
 
 func checkStableVersionsAreComputed(t *testing.T, c *LinearCache, resources ...string) {
 	t.Helper()
 	for _, res := range resources {
-		assert.NotEmpty(t, c.resources[res].stableVersion, "stable version not set on resource %s", res)
+		assert.NotEmpty(t, c.resources[res].resourceVersion, "stable version not set on resource %s", res)
 	}
 }
 

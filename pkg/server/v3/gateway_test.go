@@ -22,6 +22,8 @@ import (
 	"testing"
 	"testing/iotest"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -29,28 +31,59 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/server/v3"
 )
 
+func marshalAnyResources(resources ...types.Resource) []*anypb.Any {
+	marshaled := []*anypb.Any{}
+	for _, res := range resources {
+		m, _ := anypb.New(res)
+		marshaled = append(marshaled, m)
+	}
+	return marshaled
+}
+
+func marshalDiscoveryResources(resources []types.ResourceWithTTL) []*discovery.Resource {
+	marshaled := []*discovery.Resource{}
+	for _, res := range resources {
+		m, _ := anypb.New(res.Resource)
+		marshaled = append(marshaled, &discovery.Resource{
+			Name:     cache.GetResourceName(res.Resource),
+			Resource: m,
+			Version:  cache.HashResource(m.Value),
+		})
+	}
+	return marshaled
+}
+
 func TestGateway(t *testing.T) {
 	config := makeMockConfigWatcher()
 	config.responses = map[string][]cache.Response{
 		resource.ClusterType: {
-			&cache.RawResponse{
-				Version:   "2",
-				Resources: []types.ResourceWithTTL{{Resource: cluster}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: resource.ClusterType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: resource.ClusterType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "2",
+					TypeUrl:     resource.ClusterType,
+					Resources:   marshalAnyResources(cluster),
+				},
 			},
 		},
 		resource.RouteType: {
-			&cache.RawResponse{
-				Version:   "3",
-				Resources: []types.ResourceWithTTL{{Resource: route}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "3",
+					TypeUrl:     resource.RouteType,
+					Resources:   marshalAnyResources(route),
+				},
 			},
 		},
 		resource.ListenerType: {
-			&cache.RawResponse{
-				Version:   "4",
-				Resources: []types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: resource.ListenerType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: resource.ListenerType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "4",
+					TypeUrl:     resource.RouteType,
+					Resources:   marshalAnyResources(httpListener, httpScopedListener),
+				},
 			},
 		},
 	}

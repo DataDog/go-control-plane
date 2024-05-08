@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -164,7 +165,7 @@ var (
 	runtime            = resource.MakeRuntime(runtimeName)
 	extensionConfig    = resource.MakeExtensionConfig(resource.Ads, extensionConfigName, routeName)
 	opaque             = &core.Address{}
-	opaqueType         = "unknown-type"
+	opaqueType         = rsrc.APITypePrefix + string(proto.MessageName(opaque))
 	testTypes          = []string{
 		rsrc.EndpointType,
 		rsrc.ClusterType,
@@ -181,74 +182,104 @@ var (
 func makeResponses() map[string][]cache.Response {
 	return map[string][]cache.Response{
 		rsrc.EndpointType: {
-			&cache.RawResponse{
-				Version:   "1",
-				Resources: []types.ResourceWithTTL{{Resource: endpoint}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "1",
+					TypeUrl:     rsrc.EndpointType,
+					Resources:   marshalAnyResources(endpoint),
+				},
 			},
 		},
 		rsrc.ClusterType: {
-			&cache.RawResponse{
-				Version:   "2",
-				Resources: []types.ResourceWithTTL{{Resource: cluster}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "2",
+					TypeUrl:     rsrc.ClusterType,
+					Resources:   marshalAnyResources(cluster),
+				},
 			},
 		},
 		rsrc.RouteType: {
-			&cache.RawResponse{
-				Version:   "3",
-				Resources: []types.ResourceWithTTL{{Resource: route}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.RouteType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.RouteType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "3",
+					TypeUrl:     rsrc.RouteType,
+					Resources:   marshalAnyResources(route),
+				},
 			},
 		},
 		rsrc.ScopedRouteType: {
-			&cache.RawResponse{
-				Version:   "4",
-				Resources: []types.ResourceWithTTL{{Resource: scopedRoute}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ScopedRouteType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.ScopedRouteType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "4",
+					TypeUrl:     rsrc.ScopedRouteType,
+					Resources:   marshalAnyResources(scopedRoute),
+				},
 			},
 		},
 		rsrc.VirtualHostType: {
-			&cache.RawResponse{
-				Version:   "5",
-				Resources: []types.ResourceWithTTL{{Resource: virtualHost}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "5",
+					TypeUrl:     rsrc.VirtualHostType,
+					Resources:   marshalAnyResources(virtualHost),
+				},
 			},
 		},
 		rsrc.ListenerType: {
-			&cache.RawResponse{
-				Version:   "6",
-				Resources: []types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ListenerType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.ListenerType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "6",
+					TypeUrl:     rsrc.ListenerType,
+					Resources:   marshalAnyResources(httpListener, httpScopedListener),
+				},
 			},
 		},
 		rsrc.SecretType: {
-			&cache.RawResponse{
-				Version:   "7",
-				Resources: []types.ResourceWithTTL{{Resource: secret}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.SecretType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.SecretType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "7",
+					TypeUrl:     rsrc.SecretType,
+					Resources:   marshalAnyResources(secret),
+				},
 			},
 		},
 		rsrc.RuntimeType: {
-			&cache.RawResponse{
-				Version:   "8",
-				Resources: []types.ResourceWithTTL{{Resource: runtime}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.RuntimeType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.RuntimeType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "8",
+					TypeUrl:     rsrc.RuntimeType,
+					Resources:   marshalAnyResources(runtime),
+				},
 			},
 		},
 		rsrc.ExtensionConfigType: {
-			&cache.RawResponse{
-				Version:   "9",
-				Resources: []types.ResourceWithTTL{{Resource: extensionConfig}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ExtensionConfigType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: rsrc.ExtensionConfigType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "9",
+					TypeUrl:     rsrc.ExtensionConfigType,
+					Resources:   marshalAnyResources(extensionConfig),
+				},
 			},
 		},
 		// Pass-through type (xDS does not exist for this type)
 		opaqueType: {
-			&cache.RawResponse{
-				Version:   "10",
-				Resources: []types.ResourceWithTTL{{Resource: opaque}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: opaqueType},
+			&cache.PassthroughResponse{
+				Request: &discovery.DiscoveryRequest{TypeUrl: opaqueType},
+				DiscoveryResponse: &discovery.DiscoveryResponse{
+					VersionInfo: "10",
+					TypeUrl:     opaqueType,
+					Resources:   marshalAnyResources(opaque),
+				},
 			},
 		},
 	}

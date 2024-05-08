@@ -17,15 +17,11 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync/atomic"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
-
-	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 )
@@ -179,7 +175,7 @@ type RawResponse struct {
 	Version string
 
 	// Resources to be included in the response.
-	Resources []types.ResourceWithTTL
+	Resources []returnedResource
 
 	// ReturnedResources tracks the resources returned for the subscription and the version when it was last returned,
 	// including previously returned ones when using non-full state resources.
@@ -209,7 +205,7 @@ type RawDeltaResponse struct {
 	SystemVersionInfo string
 
 	// Resources to be included in the response.
-	Resources []types.ResourceWithTTL
+	Resources []returnedResource
 
 	// RemovedResources is a list of resource aliases which should be dropped by the consuming client.
 	RemovedResources []string
@@ -276,18 +272,11 @@ func (r *RawResponse) GetDiscoveryResponse() (*discovery.DiscoveryResponse, erro
 		marshaledResources := make([]*anypb.Any, len(r.Resources))
 
 		for i, resource := range r.Resources {
-			maybeTtldResource, resourceType, err := r.maybeCreateTTLResource(resource)
+			maybeTtldResource, err := r.maybeCreateTTLResource(resource)
 			if err != nil {
 				return nil, err
 			}
-			marshaledResource, err := MarshalResource(maybeTtldResource)
-			if err != nil {
-				return nil, err
-			}
-			marshaledResources[i] = &anypb.Any{
-				TypeUrl: resourceType,
-				Value:   marshaledResource,
-			}
+			marshaledResources[i] = maybeTtldResource
 		}
 
 		marshaledResponse = &discovery.DiscoveryResponse{
@@ -316,22 +305,14 @@ func (r *RawDeltaResponse) GetDeltaDiscoveryResponse() (*discovery.DeltaDiscover
 		marshaledResources := make([]*discovery.Resource, len(r.Resources))
 
 		for i, resource := range r.Resources {
-			name := GetResourceName(resource.Resource)
-			marshaledResource, err := MarshalResource(resource.Resource)
+			marshaledResource, version, err := resource.buildAnyEntryWithVersion()
 			if err != nil {
 				return nil, err
 			}
-			version := HashResource(marshaledResource)
-			if version == "" {
-				return nil, errors.New("failed to create a resource hash")
-			}
 			marshaledResources[i] = &discovery.Resource{
-				Name: name,
-				Resource: &anypb.Any{
-					TypeUrl: r.GetDeltaRequest().GetTypeUrl(),
-					Value:   marshaledResource,
-				},
-				Version: version,
+				Name:     resource.name,
+				Resource: marshaledResource,
+				Version:  version,
 			}
 		}
 
@@ -398,28 +379,34 @@ func (r *RawDeltaResponse) GetContext() context.Context {
 	return r.Ctx
 }
 
-var deltaResourceTypeURL = "type.googleapis.com/" + string(proto.MessageName(&discovery.Resource{}))
-
-func (r *RawResponse) maybeCreateTTLResource(resource types.ResourceWithTTL) (types.Resource, string, error) {
+func (r *RawResponse) maybeCreateTTLResource(resource returnedResource) (*anypb.Any, error) {
 	if resource.TTL != nil {
 		wrappedResource := &discovery.Resource{
-			Name: GetResourceName(resource.Resource),
+			Name: resource.name,
 			Ttl:  durationpb.New(*resource.TTL),
 		}
 
 		if !r.Heartbeat {
-			rsrc, err := anypb.New(resource.Resource)
+			rsrc, err := resource.buildAnyEntry()
 			if err != nil {
-				return nil, "", err
+				return nil, err
 			}
 			rsrc.TypeUrl = r.GetRequest().GetTypeUrl()
 			wrappedResource.Resource = rsrc
 		}
 
-		return wrappedResource, deltaResourceTypeURL, nil
+		wrapped, err := anypb.New(wrappedResource)
+		if err != nil {
+			return nil, err
+		}
+		return wrapped, nil
 	}
 
-	return resource.Resource, r.GetRequest().GetTypeUrl(), nil
+	rsrc, err := resource.buildAnyEntry()
+	if err != nil {
+		return nil, err
+	}
+	return rsrc, nil
 }
 
 // GetDiscoveryResponse returns the final passthrough Discovery Response.

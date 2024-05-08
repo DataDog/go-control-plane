@@ -23,7 +23,6 @@ import (
 	"time"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 )
 
 // NodeHash computes string identifiers for Envoy nodes.
@@ -136,14 +135,18 @@ func (w ResponseWatch) isDelta() bool {
 	return false
 }
 
-func (w ResponseWatch) buildResponse(updatedResources []types.ResourceWithTTL, _ []string, returnedVersions map[string]string, version string) WatchResponse {
-	return &RawResponse{
+func (w ResponseWatch) buildResponse(updatedResources []*cachedResource, _ []string, returnedVersions map[string]string, version string) WatchResponse {
+	resp := &RawResponse{
 		Request:           w.Request,
-		Resources:         updatedResources,
+		Resources:         make([]returnedResource, 0, len(updatedResources)),
 		ReturnedResources: returnedVersions,
 		Version:           version,
 		Ctx:               context.Background(),
 	}
+	for _, res := range updatedResources {
+		resp.Resources = append(resp.Resources, newReturnedResourceFromCache(res))
+	}
+	return resp
 }
 
 func (w ResponseWatch) useStableVersion() bool {
@@ -190,15 +193,19 @@ func (w DeltaResponseWatch) getSubscription() Subscription {
 	return w.subscription
 }
 
-func (w DeltaResponseWatch) buildResponse(updatedResources []types.ResourceWithTTL, removedResources []string, returnedVersions map[string]string, version string) WatchResponse {
-	return &RawDeltaResponse{
+func (w DeltaResponseWatch) buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse {
+	resp := &RawDeltaResponse{
 		DeltaRequest:      w.Request,
-		Resources:         updatedResources,
+		Resources:         make([]returnedResource, 0, len(updatedResources)),
 		RemovedResources:  removedResources,
 		NextVersionMap:    returnedVersions,
 		SystemVersionInfo: version,
 		Ctx:               context.Background(),
 	}
+	for _, res := range updatedResources {
+		resp.Resources = append(resp.Resources, newReturnedResourceFromCache(res))
+	}
+	return resp
 }
 
 func (w DeltaResponseWatch) sendResponse(resp WatchResponse) {

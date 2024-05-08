@@ -16,27 +16,25 @@ package cache
 
 import (
 	"context"
-
-	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 )
 
 // groups together resource-related arguments for the createDeltaResponse function
 type resourceContainer struct {
-	resourceMap map[string]types.Resource
+	resourceMap map[string]*cachedResource
 	versionMap  map[string]string
 }
 
 func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscription, resources resourceContainer, cacheVersion string) *RawDeltaResponse {
 	// variables to build our response with
 	var nextVersionMap map[string]string
-	var filtered []types.ResourceWithTTL
+	var filtered []returnedResource
 	var toRemove []string
 
 	// If we are handling a wildcard request, we want to respond with all resources
 	switch {
 	case sub.IsWildcard():
 		if len(sub.ReturnedResources()) == 0 {
-			filtered = make([]types.ResourceWithTTL, 0, len(resources.resourceMap))
+			filtered = make([]returnedResource, 0, len(resources.resourceMap))
 		}
 		nextVersionMap = make(map[string]string, len(resources.resourceMap))
 		for name, r := range resources.resourceMap {
@@ -46,7 +44,7 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 			nextVersionMap[name] = version
 			prevVersion, found := sub.ReturnedResources()[name]
 			if !found || (prevVersion != version) {
-				filtered = append(filtered, types.ResourceWithTTL{Resource: r})
+				filtered = append(filtered, newReturnedResourceFromCache(r))
 			}
 		}
 
@@ -66,7 +64,7 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 			if r, ok := resources.resourceMap[name]; ok {
 				nextVersion := resources.versionMap[name]
 				if prevVersion != nextVersion {
-					filtered = append(filtered, types.ResourceWithTTL{Resource: r})
+					filtered = append(filtered, newReturnedResourceFromCache(r))
 				}
 				nextVersionMap[name] = nextVersion
 			} else if found {

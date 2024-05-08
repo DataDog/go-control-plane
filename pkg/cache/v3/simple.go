@@ -502,7 +502,7 @@ func (cache *snapshotCache) respond(ctx context.Context, watch ResponseWatch, re
 }
 
 func createResponse(ctx context.Context, request *Request, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) Response {
-	filtered := make([]types.ResourceWithTTL, 0, len(resources))
+	filtered := make([]returnedResource, 0, len(resources))
 	returnedResources := make(map[string]string, len(resources))
 
 	// Reply only with the requested resources. Envoy may ask each resource
@@ -512,13 +512,13 @@ func createResponse(ctx context.Context, request *Request, resources map[string]
 		set := nameSet(request.GetResourceNames())
 		for name, resource := range resources {
 			if set[name] {
-				filtered = append(filtered, resource)
+				filtered = append(filtered, newReturnedResource(resource))
 				returnedResources[name] = version
 			}
 		}
 	} else {
 		for name, resource := range resources {
-			filtered = append(filtered, resource)
+			filtered = append(filtered, newReturnedResource(resource))
 			returnedResources[name] = version
 		}
 	}
@@ -590,7 +590,7 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 // Respond to a delta watch with the provided snapshot value. If the response is nil, there has been no state change.
 func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceSnapshot, request *DeltaRequest, value chan DeltaResponse, sub Subscription) (*RawDeltaResponse, error) {
 	resp := createDeltaResponse(ctx, request, sub, resourceContainer{
-		resourceMap: snapshot.GetResources(request.GetTypeUrl()),
+		resourceMap: newCachedResources(snapshot.GetResourcesAndTTL(request.GetTypeUrl()), snapshot.GetVersion(request.GetTypeUrl())),
 		versionMap:  snapshot.GetVersionMap(request.GetTypeUrl()),
 	}, snapshot.GetVersion(request.GetTypeUrl()))
 
@@ -600,7 +600,7 @@ func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceS
 	if len(resp.Resources) > 0 || len(resp.RemovedResources) > 0 || (sub.IsWildcard() && request.ResponseNonce == "") {
 		if cache.log != nil {
 			cache.log.Debugf("node: %s, sending delta response for typeURL %s with resources: %v removed resources: %v with wildcard: %t",
-				request.GetNode().GetId(), request.GetTypeUrl(), GetResourceNames(resp.Resources), resp.RemovedResources, sub.IsWildcard())
+				request.GetNode().GetId(), request.GetTypeUrl(), getReturnedResourceNames(resp.Resources), resp.RemovedResources, sub.IsWildcard())
 		}
 		select {
 		case value <- resp:
