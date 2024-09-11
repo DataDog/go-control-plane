@@ -58,6 +58,8 @@ const (
 	HTTPGRPCStats = "envoy.filters.http.grpc_stats"
 	// HTTP WASM filter
 	HTTPWasm = "envoy.extensions.filters.http.wasm.v3.Wasm"
+	// ProxyProtocolTlvProcessor sets ppv2 tlvs as http headers and/or l7 dynamic metadata
+	ProxyProtocolTlvProcessor = "envoy.filters.http.proxy_protocol_tlv_processor"
 )
 
 // Network filter names
