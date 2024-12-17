@@ -194,7 +194,7 @@ func (w DeltaResponseWatch) buildResponse(updatedResources []cachedResource, rem
 		DeltaRequest:      w.Request,
 		resources:         updatedResources,
 		removedResources:  removedResources,
-		NextVersionMap:    returnedVersions,
+		nextVersionMap:    returnedVersions,
 		SystemVersionInfo: version,
 		Ctx:               context.Background(),
 	}

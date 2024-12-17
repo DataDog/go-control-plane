@@ -79,7 +79,7 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 		DeltaRequest:      req,
 		resources:         filtered,
 		removedResources:  toRemove,
-		NextVersionMap:    nextVersionMap,
+		nextVersionMap:    nextVersionMap,
 		SystemVersionInfo: cacheVersion,
 		Ctx:               ctx,
 	}

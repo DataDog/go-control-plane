@@ -64,7 +64,7 @@ func newCachedResourceWithTTL(name string, res types.ResourceWithTTL, cacheVersi
 	}
 }
 
-// getMarshaledResource lazily marshals the resource and return the bytes.
+// getMarshaledResource lazily marshals the resource and returns the bytes.
 // It is not safe to call it concurrently.
 func (c *cachedResource) getMarshaledResource() ([]byte, error) {
 	if c.marshaledResource != nil {
@@ -79,7 +79,7 @@ func (c *cachedResource) getMarshaledResource() ([]byte, error) {
 	return c.marshaledResource, nil
 }
 
-// getStableVersion lazily hashes the resource and return the stable hash used to track version changes.
+// getStableVersion lazily hashes the resource and returns the stable hash used to track version changes.
 // It is not safe to call it concurrently.
 func (c *cachedResource) getStableVersion() (string, error) {
 	if c.stableVersion != "" {

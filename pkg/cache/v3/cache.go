@@ -176,10 +176,10 @@ type RawResponse struct {
 	// Proxy responds with this version as an acknowledgement.
 	Version string
 
-	// Resources to be included in the response.
+	// resources to be included in the response.
 	resources []cachedResource
 
-	// ReturnedResources tracks the resources returned for the subscription and the version when it was last returned,
+	// returnedResources tracks the resources returned for the subscription and the version when it was last returned,
 	// including previously returned ones when using non-full state resources.
 	// It allows the cache to know what the client knows. The server will transparently forward this
 	// across requests, and the cache is responsible for its interpretation.
@@ -206,14 +206,14 @@ type RawDeltaResponse struct {
 	// SystemVersionInfo holds the currently applied response system version and should be used for debugging purposes only.
 	SystemVersionInfo string
 
-	// Resources to be included in the response.
+	// resources to be included in the response.
 	resources []cachedResource
 
-	// RemovedResources is a list of resource aliases which should be dropped by the consuming client.
+	// removedResources is a list of resource aliases which should be dropped by the consuming client.
 	removedResources []string
 
-	// NextVersionMap consists of updated version mappings after this response is applied.
-	NextVersionMap map[string]string
+	// nextVersionMap consists of updated version mappings after this response is applied.
+	nextVersionMap map[string]string
 
 	// Context provided at the time of response creation. This allows associating additional
 	// information with a generated response.
@@ -291,7 +291,7 @@ func NewTestRawDeltaResponse(req *discovery.DeltaDiscoveryRequest, version strin
 		SystemVersionInfo: version,
 		resources:         cachedRes,
 		removedResources:  removedResources,
-		NextVersionMap:    nextVersionMap,
+		nextVersionMap:    nextVersionMap,
 	}
 }
 
@@ -434,7 +434,7 @@ func (r *RawDeltaResponse) GetNextVersionMap() map[string]string {
 
 // GetReturnedResources returns the version map which consists of updated version mappings after this response is applied.
 func (r *RawDeltaResponse) GetReturnedResources() map[string]string {
-	return r.NextVersionMap
+	return r.nextVersionMap
 }
 
 func (r *RawDeltaResponse) GetContext() context.Context {
