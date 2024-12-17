@@ -116,8 +116,8 @@ func verifyResponseResources(t *testing.T, ch <-chan Response, expectedType, exp
 	}
 	out := r.(*RawResponse)
 	resourceNames := []string{}
-	for _, res := range out.Resources {
-		resourceNames = append(resourceNames, GetResourceName(res.Resource))
+	for _, res := range out.resources {
+		resourceNames = append(resourceNames, res.name)
 	}
 	assert.ElementsMatch(t, resourceNames, expectedResources)
 	return r
