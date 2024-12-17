@@ -177,7 +177,7 @@ type RawResponse struct {
 	Version string
 
 	// resources to be included in the response.
-	resources []cachedResource
+	resources []*cachedResource
 
 	// returnedResources tracks the resources returned for the subscription and the version when it was last returned,
 	// including previously returned ones when using non-full state resources.
@@ -207,7 +207,7 @@ type RawDeltaResponse struct {
 	SystemVersionInfo string
 
 	// resources to be included in the response.
-	resources []cachedResource
+	resources []*cachedResource
 
 	// removedResources is a list of resource aliases which should be dropped by the consuming client.
 	removedResources []string
@@ -265,11 +265,11 @@ var (
 )
 
 func NewTestRawResponse(req *discovery.DiscoveryRequest, version string, resources []types.ResourceWithTTL) *RawResponse {
-	cachedRes := []cachedResource{}
+	cachedRes := []*cachedResource{}
 	for _, res := range resources {
 		newRes := newCachedResource(GetResourceName(res.Resource), res.Resource, version)
 		newRes.ttl = res.TTL
-		cachedRes = append(cachedRes, *newRes)
+		cachedRes = append(cachedRes, newRes)
 	}
 	return &RawResponse{
 		Request:   req,
@@ -279,12 +279,12 @@ func NewTestRawResponse(req *discovery.DiscoveryRequest, version string, resourc
 }
 
 func NewTestRawDeltaResponse(req *discovery.DeltaDiscoveryRequest, version string, resources []types.ResourceWithTTL, removedResources []string, nextVersionMap map[string]string) *RawDeltaResponse {
-	cachedRes := []cachedResource{}
+	cachedRes := []*cachedResource{}
 	for _, res := range resources {
 		name := GetResourceName(res.Resource)
 		newRes := newCachedResource(name, res.Resource, nextVersionMap[name])
 		newRes.ttl = res.TTL
-		cachedRes = append(cachedRes, *newRes)
+		cachedRes = append(cachedRes, newRes)
 	}
 	return &RawDeltaResponse{
 		DeltaRequest:      req,
@@ -443,7 +443,7 @@ func (r *RawDeltaResponse) GetContext() context.Context {
 
 var deltaResourceTypeURL = "type.googleapis.com/" + string(proto.MessageName(&discovery.Resource{}))
 
-func (r *RawResponse) marshalTTLResource(resource cachedResource) (*anypb.Any, error) {
+func (r *RawResponse) marshalTTLResource(resource *cachedResource) (*anypb.Any, error) {
 	if resource.ttl == nil {
 		marshaled, err := resource.getMarshaledResource()
 		if err != nil {

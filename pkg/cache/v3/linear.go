@@ -45,6 +45,9 @@ type cachedResource struct {
 	// marshaledResource contains the marshaled version of the resource.
 	// It is lazy initialized and should be accessed through getMarshaledResource
 	marshaledResource []byte
+
+	// mu is the mutex used to lazy compute the marshaled resource and stable version.
+	mu sync.Mutex
 }
 
 func newCachedResource(name string, res types.Resource, cacheVersion string) *cachedResource {
@@ -65,8 +68,14 @@ func newCachedResourceWithTTL(name string, res types.ResourceWithTTL, cacheVersi
 }
 
 // getMarshaledResource lazily marshals the resource and returns the bytes.
-// It is not safe to call it concurrently.
 func (c *cachedResource) getMarshaledResource() ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.marshalResourceLocked()
+}
+
+func (c *cachedResource) marshalResourceLocked() ([]byte, error) {
 	if c.marshaledResource != nil {
 		return c.marshaledResource, nil
 	}
@@ -80,13 +89,19 @@ func (c *cachedResource) getMarshaledResource() ([]byte, error) {
 }
 
 // getStableVersion lazily hashes the resource and returns the stable hash used to track version changes.
-// It is not safe to call it concurrently.
 func (c *cachedResource) getStableVersion() (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.computeStableVersionLocked()
+}
+
+func (c *cachedResource) computeStableVersionLocked() (string, error) {
 	if c.stableVersion != "" {
 		return c.stableVersion, nil
 	}
 
-	marshaledResource, err := c.getMarshaledResource()
+	marshaledResource, err := c.marshalResourceLocked()
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +110,6 @@ func (c *cachedResource) getStableVersion() (string, error) {
 }
 
 // getVersion returns the requested version.
-// It is not safe to call it concurrently.
 func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
 	if !useStableVersion {
 		return c.cacheVersion, nil
@@ -118,7 +132,7 @@ type watch interface {
 	getSubscription() Subscription
 	// buildResponse computes the actual WatchResponse object to be sent on the watch.
 	// cachedResource instances are passed by copy as their lazy accessors are not thread-safe.
-	buildResponse(updatedResources []cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
+	buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
 	// sendResponse sends the response for the watch.
 	// It must be called at most once.
 	sendResponse(resp WatchResponse)
@@ -370,10 +384,10 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 		returnedVersions[resourceName] = version
 	}
 
-	resources := make([]cachedResource, 0, len(resourcesToReturn))
+	resources := make([]*cachedResource, 0, len(resourcesToReturn))
 	for _, resourceName := range resourcesToReturn {
 		cachedResource := cache.resources[resourceName]
-		resources = append(resources, *cachedResource)
+		resources = append(resources, cachedResource)
 		version, err := cachedResource.getVersion(watch.useStableVersion())
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)

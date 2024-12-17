@@ -125,7 +125,7 @@ func GetResourceNames(resources []types.ResourceWithTTL) []string {
 }
 
 // getCachedResourceNames returns the resource names for a list of valid xDS response types.
-func getCachedResourceNames(resources []cachedResource) []string {
+func getCachedResourceNames(resources []*cachedResource) []string {
 	out := make([]string, len(resources))
 	for i, r := range resources {
 		out[i] = GetResourceName(r.resource)

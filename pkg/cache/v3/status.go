@@ -135,7 +135,7 @@ func (w ResponseWatch) isDelta() bool {
 	return false
 }
 
-func (w ResponseWatch) buildResponse(updatedResources []cachedResource, _ []string, returnedVersions map[string]string, version string) WatchResponse {
+func (w ResponseWatch) buildResponse(updatedResources []*cachedResource, _ []string, returnedVersions map[string]string, version string) WatchResponse {
 	return &RawResponse{
 		Request:           w.Request,
 		resources:         updatedResources,
@@ -189,7 +189,7 @@ func (w DeltaResponseWatch) getSubscription() Subscription {
 	return w.subscription
 }
 
-func (w DeltaResponseWatch) buildResponse(updatedResources []cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse {
+func (w DeltaResponseWatch) buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse {
 	return &RawDeltaResponse{
 		DeltaRequest:      w.Request,
 		resources:         updatedResources,

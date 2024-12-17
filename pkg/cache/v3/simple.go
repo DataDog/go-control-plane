@@ -502,7 +502,7 @@ func (cache *snapshotCache) respond(ctx context.Context, watch ResponseWatch, re
 }
 
 func createResponse(ctx context.Context, request *Request, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) Response {
-	filtered := make([]cachedResource, 0, len(resources))
+	filtered := make([]*cachedResource, 0, len(resources))
 	returnedResources := make(map[string]string, len(resources))
 
 	// Reply only with the requested resources. Envoy may ask each resource
@@ -512,13 +512,13 @@ func createResponse(ctx context.Context, request *Request, resources map[string]
 		set := nameSet(request.GetResourceNames())
 		for name, resource := range resources {
 			if set[name] {
-				filtered = append(filtered, *newCachedResourceWithTTL(name, resource, version))
+				filtered = append(filtered, newCachedResourceWithTTL(name, resource, version))
 				returnedResources[name] = version
 			}
 		}
 	} else {
 		for name, resource := range resources {
-			filtered = append(filtered, *newCachedResourceWithTTL(name, resource, version))
+			filtered = append(filtered, newCachedResourceWithTTL(name, resource, version))
 			returnedResources[name] = version
 		}
 	}

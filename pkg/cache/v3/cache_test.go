@@ -20,7 +20,7 @@ const (
 )
 
 func TestResponseGetDiscoveryResponse(t *testing.T) {
-	routes := []cachedResource{*newCachedResource(resourceName, &route.RouteConfiguration{Name: resourceName}, "v")}
+	routes := []*cachedResource{newCachedResource(resourceName, &route.RouteConfiguration{Name: resourceName}, "v")}
 	resp := RawResponse{
 		Request:   &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 		Version:   "v",
@@ -69,7 +69,7 @@ func TestPassthroughResponseGetDiscoveryResponse(t *testing.T) {
 }
 
 func TestHeartbeatResponseGetDiscoveryResponse(t *testing.T) {
-	routes := []cachedResource{*newCachedResource(resourceName, &route.RouteConfiguration{Name: resourceName}, "v")}
+	routes := []*cachedResource{newCachedResource(resourceName, &route.RouteConfiguration{Name: resourceName}, "v")}
 	resp := RawResponse{
 		Request:   &discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 		Version:   "v",
