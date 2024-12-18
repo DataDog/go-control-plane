@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
@@ -29,30 +30,78 @@ import (
 // cachedResource is used to track resources added by the user in the cache.
 // It contains the resource itself and its associated version (currently in two different modes).
 type cachedResource struct {
-	types.Resource
+	name string
+
+	resource types.Resource
+	ttl      *time.Duration
 
 	// cacheVersion is the version of the cache at the time of last update, used in sotw.
 	cacheVersion string
+
 	// stableVersion is the version of the resource itself (a hash of its content after deterministic marshaling).
 	// It is lazy initialized and should be accessed through getStableVersion.
 	stableVersion string
+
+	// marshaledResource contains the marshaled version of the resource.
+	// It is lazy initialized and should be accessed through getMarshaledResource
+	marshaledResource []byte
+
+	// mu is the mutex used to lazy compute the marshaled resource and stable version.
+	mu sync.Mutex
 }
 
-func newCachedResource(res types.Resource, cacheVersion string) *cachedResource {
+func newCachedResource(name string, res types.Resource, cacheVersion string) *cachedResource {
 	return &cachedResource{
-		Resource:     res,
+		name:         name,
+		resource:     res,
 		cacheVersion: cacheVersion,
 	}
 }
 
+func newCachedResourceWithTTL(name string, res types.ResourceWithTTL, cacheVersion string) *cachedResource {
+	return &cachedResource{
+		name:         name,
+		resource:     res.Resource,
+		ttl:          res.TTL,
+		cacheVersion: cacheVersion,
+	}
+}
+
+// getMarshaledResource lazily marshals the resource and returns the bytes.
+func (c *cachedResource) getMarshaledResource() ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.marshalResourceLocked()
+}
+
+func (c *cachedResource) marshalResourceLocked() ([]byte, error) {
+	if c.marshaledResource != nil {
+		return c.marshaledResource, nil
+	}
+
+	marshaledResource, err := MarshalResource(c.resource)
+	if err != nil {
+		return nil, err
+	}
+	c.marshaledResource = marshaledResource
+	return c.marshaledResource, nil
+}
+
+// getStableVersion lazily hashes the resource and returns the stable hash used to track version changes.
 func (c *cachedResource) getStableVersion() (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.computeStableVersionLocked()
+}
+
+func (c *cachedResource) computeStableVersionLocked() (string, error) {
 	if c.stableVersion != "" {
 		return c.stableVersion, nil
 	}
 
-	// TODO(valerian-roche): store serialized resource as part of the cachedResource
-	// to reuse it when marshaling the responses instead of remarshaling and recomputing the version then.
-	marshaledResource, err := MarshalResource(c.Resource)
+	marshaledResource, err := c.marshalResourceLocked()
 	if err != nil {
 		return "", err
 	}
@@ -60,6 +109,7 @@ func (c *cachedResource) getStableVersion() (string, error) {
 	return c.stableVersion, nil
 }
 
+// getVersion returns the requested version.
 func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
 	if !useStableVersion {
 		return c.cacheVersion, nil
@@ -81,7 +131,8 @@ type watch interface {
 
 	getSubscription() Subscription
 	// buildResponse computes the actual WatchResponse object to be sent on the watch.
-	buildResponse(updatedResources []types.ResourceWithTTL, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
+	// cachedResource instances are passed by copy as their lazy accessors are not thread-safe.
+	buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
 	// sendResponse sends the response for the watch.
 	// It must be called at most once.
 	sendResponse(resp WatchResponse)
@@ -155,9 +206,7 @@ func WithVersionPrefix(prefix string) LinearCacheOption {
 func WithInitialResources(resources map[string]types.Resource) LinearCacheOption {
 	return func(cache *LinearCache) {
 		for name, resource := range resources {
-			cache.resources[name] = &cachedResource{
-				Resource: resource,
-			}
+			cache.resources[name] = newCachedResource(name, resource, "")
 		}
 	}
 }
@@ -335,10 +384,10 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 		returnedVersions[resourceName] = version
 	}
 
-	resources := make([]types.ResourceWithTTL, 0, len(resourcesToReturn))
+	resources := make([]*cachedResource, 0, len(resourcesToReturn))
 	for _, resourceName := range resourcesToReturn {
 		cachedResource := cache.resources[resourceName]
-		resources = append(resources, types.ResourceWithTTL{Resource: cachedResource.Resource})
+		resources = append(resources, cachedResource)
 		version, err := cachedResource.getVersion(watch.useStableVersion())
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
@@ -410,7 +459,7 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 	defer cache.mu.Unlock()
 
 	cache.version++
-	cache.resources[name] = newCachedResource(res, cache.getVersion())
+	cache.resources[name] = newCachedResource(name, res, cache.getVersion())
 
 	return cache.notifyAll([]string{name})
 }
@@ -437,7 +486,7 @@ func (cache *LinearCache) UpdateResources(toUpdate map[string]types.Resource, to
 	version := cache.getVersion()
 	modified := make([]string, 0, len(toUpdate)+len(toDelete))
 	for name, resource := range toUpdate {
-		cache.resources[name] = newCachedResource(resource, version)
+		cache.resources[name] = newCachedResource(name, resource, version)
 		modified = append(modified, name)
 	}
 	for _, name := range toDelete {
@@ -470,7 +519,7 @@ func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 	// In delta and if stable versions are used for sotw, identical resources will not trigger watches.
 	// In sotw without stable versions used, all those resources will trigger watches, even if identical.
 	for name, resource := range resources {
-		cache.resources[name] = newCachedResource(resource, version)
+		cache.resources[name] = newCachedResource(name, resource, version)
 		modified = append(modified, name)
 	}
 
@@ -488,7 +537,7 @@ func (cache *LinearCache) GetResources() map[string]types.Resource {
 	// involving mutations of our backing map
 	resources := make(map[string]types.Resource, len(cache.resources))
 	for k, v := range cache.resources {
-		resources[k] = v.Resource
+		resources[k] = v.resource
 	}
 	return resources
 }
