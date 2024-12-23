@@ -189,75 +189,75 @@ var (
 func makeResponses() map[string][]cache.Response {
 	return map[string][]cache.Response{
 		rsrc.EndpointType: {
-			&cache.RawResponse{
-				Version:   "1",
-				Resources: []types.ResourceWithTTL{{Resource: endpoint}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
+				"1",
+				[]types.ResourceWithTTL{{Resource: endpoint}},
+			),
 		},
 		rsrc.ClusterType: {
-			&cache.RawResponse{
-				Version:   "2",
-				Resources: []types.ResourceWithTTL{{Resource: cluster}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType},
+				"2",
+				[]types.ResourceWithTTL{{Resource: cluster}},
+			),
 		},
 		rsrc.RouteType: {
-			&cache.RawResponse{
-				Version:   "3",
-				Resources: []types.ResourceWithTTL{{Resource: route}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.RouteType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.RouteType},
+				"3",
+				[]types.ResourceWithTTL{{Resource: route}},
+			),
 		},
 		rsrc.ScopedRouteType: {
-			&cache.RawResponse{
-				Version:   "4",
-				Resources: []types.ResourceWithTTL{{Resource: scopedRoute}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ScopedRouteType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.ScopedRouteType},
+				"4",
+				[]types.ResourceWithTTL{{Resource: scopedRoute}},
+			),
 		},
 		rsrc.VirtualHostType: {
-			&cache.RawResponse{
-				Version:   "5",
-				Resources: []types.ResourceWithTTL{{Resource: virtualHost}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+				"5",
+				[]types.ResourceWithTTL{{Resource: virtualHost}},
+			),
 		},
 		rsrc.ListenerType: {
-			&cache.RawResponse{
-				Version:   "6",
-				Resources: []types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ListenerType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.ListenerType},
+				"6",
+				[]types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},
+			),
 		},
 		rsrc.SecretType: {
-			&cache.RawResponse{
-				Version:   "7",
-				Resources: []types.ResourceWithTTL{{Resource: secret}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.SecretType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.SecretType},
+				"7",
+				[]types.ResourceWithTTL{{Resource: secret}},
+			),
 		},
 		rsrc.RuntimeType: {
-			&cache.RawResponse{
-				Version:   "8",
-				Resources: []types.ResourceWithTTL{{Resource: runtime}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.RuntimeType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.RuntimeType},
+				"8",
+				[]types.ResourceWithTTL{{Resource: runtime}},
+			),
 		},
 		rsrc.ExtensionConfigType: {
-			&cache.RawResponse{
-				Version:   "9",
-				Resources: []types.ResourceWithTTL{{Resource: extensionConfig}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: rsrc.ExtensionConfigType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: rsrc.ExtensionConfigType},
+				"9",
+				[]types.ResourceWithTTL{{Resource: extensionConfig}},
+			),
 		},
 		// Pass-through type (xDS does not exist for this type)
 		opaqueType: {
-			&cache.RawResponse{
-				Version:   "10",
-				Resources: []types.ResourceWithTTL{{Resource: opaque}},
-				Request:   &discovery.DiscoveryRequest{TypeUrl: opaqueType},
-			},
+			cache.NewTestRawResponse(
+				&discovery.DiscoveryRequest{TypeUrl: opaqueType},
+				"10",
+				[]types.ResourceWithTTL{{Resource: opaque}},
+			),
 		},
 	}
 }
