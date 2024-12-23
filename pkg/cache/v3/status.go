@@ -86,7 +86,7 @@ type statusInfo struct {
 	mu sync.RWMutex
 }
 
-func computeSotwStableVersion(versionMap map[string]string) string {
+func computeSotwResourceVersion(versionMap map[string]string) string {
 	// To enforce a stable hash we need to have an ordered vision of the map.
 	keys := make([]string, 0, len(versionMap))
 	for key := range versionMap {
@@ -124,8 +124,8 @@ type ResponseWatch struct {
 	// Subscription stores the current client subscription state.
 	subscription Subscription
 
-	// enableStableVersion indicates whether versions returned in the response are built using stable versions instead of cache update versions.
-	enableStableVersion bool
+	// enableResourceVersion indicates whether versions returned in the response are built using stable versions instead of cache update versions.
+	enableResourceVersion bool
 
 	// fullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
 	fullStateResponses bool
@@ -145,8 +145,8 @@ func (w ResponseWatch) buildResponse(updatedResources []*cachedResource, _ []str
 	}
 }
 
-func (w ResponseWatch) useStableVersion() bool {
-	return w.enableStableVersion
+func (w ResponseWatch) useResourceVersion() bool {
+	return w.enableResourceVersion
 }
 
 func (w ResponseWatch) sendFullStateResponses() bool {
@@ -177,7 +177,7 @@ func (w DeltaResponseWatch) isDelta() bool {
 	return true
 }
 
-func (w DeltaResponseWatch) useStableVersion() bool {
+func (w DeltaResponseWatch) useResourceVersion() bool {
 	return true
 }
 

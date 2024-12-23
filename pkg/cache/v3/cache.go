@@ -356,7 +356,7 @@ func (r *RawDeltaResponse) GetDeltaDiscoveryResponse() (*discovery.DeltaDiscover
 		if err != nil {
 			return nil, fmt.Errorf("processing %s: %w", resource.name, err)
 		}
-		version, err := resource.getStableVersion()
+		version, err := resource.getResourceVersion()
 		if err != nil {
 			return nil, fmt.Errorf("processing version of %s: %w", resource.name, err)
 		}

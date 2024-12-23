@@ -38,84 +38,52 @@ type cachedResource struct {
 	// cacheVersion is the version of the cache at the time of last update, used in sotw.
 	cacheVersion string
 
-	// stableVersion is the version of the resource itself (a hash of its content after deterministic marshaling).
-	// It is lazy initialized and should be accessed through getStableVersion.
-	stableVersion string
-
-	// marshaledResource contains the marshaled version of the resource.
-	// It is lazy initialized and should be accessed through getMarshaledResource
-	marshaledResource []byte
-
-	// mu is the mutex used to lazy compute the marshaled resource and stable version.
-	mu sync.Mutex
+	marshalFunc                func() ([]byte, error)
+	computeResourceVersionFunc func() (string, error)
 }
 
 func newCachedResource(name string, res types.Resource, cacheVersion string) *cachedResource {
+	marshalFunc := sync.OnceValues(func() ([]byte, error) {
+		return MarshalResource(res)
+	})
 	return &cachedResource{
 		name:         name,
 		resource:     res,
 		cacheVersion: cacheVersion,
+		marshalFunc:  marshalFunc,
+		computeResourceVersionFunc: sync.OnceValues(func() (string, error) {
+			marshaled, err := marshalFunc()
+			if err != nil {
+				return "", fmt.Errorf("marshaling resource: %w", err)
+			}
+			return HashResource(marshaled), nil
+		}),
 	}
 }
 
 func newCachedResourceWithTTL(name string, res types.ResourceWithTTL, cacheVersion string) *cachedResource {
-	return &cachedResource{
-		name:         name,
-		resource:     res.Resource,
-		ttl:          res.TTL,
-		cacheVersion: cacheVersion,
-	}
+	cachedRes := newCachedResource(name, res.Resource, cacheVersion)
+	cachedRes.ttl = res.TTL
+	return cachedRes
 }
 
 // getMarshaledResource lazily marshals the resource and returns the bytes.
 func (c *cachedResource) getMarshaledResource() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.marshalResourceLocked()
+	return c.marshalFunc()
 }
 
-func (c *cachedResource) marshalResourceLocked() ([]byte, error) {
-	if c.marshaledResource != nil {
-		return c.marshaledResource, nil
-	}
-
-	marshaledResource, err := MarshalResource(c.resource)
-	if err != nil {
-		return nil, err
-	}
-	c.marshaledResource = marshaledResource
-	return c.marshaledResource, nil
-}
-
-// getStableVersion lazily hashes the resource and returns the stable hash used to track version changes.
-func (c *cachedResource) getStableVersion() (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.computeStableVersionLocked()
-}
-
-func (c *cachedResource) computeStableVersionLocked() (string, error) {
-	if c.stableVersion != "" {
-		return c.stableVersion, nil
-	}
-
-	marshaledResource, err := c.marshalResourceLocked()
-	if err != nil {
-		return "", err
-	}
-	c.stableVersion = HashResource(marshaledResource)
-	return c.stableVersion, nil
+// getResourceVersion lazily hashes the resource and returns the stable hash used to track version changes.
+func (c *cachedResource) getResourceVersion() (string, error) {
+	return c.computeResourceVersionFunc()
 }
 
 // getVersion returns the requested version.
-func (c *cachedResource) getVersion(useStableVersion bool) (string, error) {
-	if !useStableVersion {
+func (c *cachedResource) getVersion(useResourceVersion bool) (string, error) {
+	if !useResourceVersion {
 		return c.cacheVersion, nil
 	}
 
-	return c.getStableVersion()
+	return c.getResourceVersion()
 }
 
 type watch interface {
@@ -123,8 +91,8 @@ type watch interface {
 	// It should not be used to take functional decisions, but is still currently used pending final changes.
 	// It can be used to generate statistics.
 	isDelta() bool
-	// useStableVersion indicates whether versions returned in the response are built using stable versions instead of cache update versions.
-	useStableVersion() bool
+	// useResourceVersion indicates whether versions returned in the response are built using resource versions instead of cache update versions.
+	useResourceVersion() bool
 	// sendFullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
 	// As a consequence, sending a response with no resources has a functional meaning of no matching resources available.
 	sendFullStateResponses() bool
@@ -173,11 +141,11 @@ type LinearCache struct {
 	// cache instances and avoid issues of version reuse.
 	versionPrefix string
 
-	// useStableVersionsInSotw switches to a new version model for sotw watches.
-	// When activated, versions are stored in subscriptions using stable versions, and the response version
-	// is an hash of the returned versions to allow watch resumptions when reconnecting to the cache with a
+	// useResourceVersionsInSotw switches to a new version model for sotw watches.
+	// When activated, versions are stored in subscriptions using resource versions, and the response version
+	// is a hash of the returned versions to allow watch resumptions when reconnecting to the cache with a
 	// new subscription.
-	useStableVersionsInSotw bool
+	useResourceVersionsInSotw bool
 
 	watchCount int
 
@@ -194,7 +162,7 @@ type LinearCacheOption func(*LinearCache)
 // WithVersionPrefix sets a version prefix of the form "prefixN" in the version info.
 // Version prefix can be used to distinguish replicated instances of the cache, in case
 // a client re-connects to another instance.
-// Deprecated: use WithSotwStableVersions instead to avoid issues when reconnecting to other instances
+// Deprecated: use WithSotwResourceVersions instead to avoid issues when reconnecting to other instances
 // while avoiding resending resources if unchanged.
 func WithVersionPrefix(prefix string) LinearCacheOption {
 	return func(cache *LinearCache) {
@@ -217,15 +185,15 @@ func WithLogger(log log.Logger) LinearCacheOption {
 	}
 }
 
-// WithSotwStableVersions changes the versions returned in sotw to encode the list of resources known
+// WithSotwResourceVersions changes the versions returned in sotw to encode the list of resources known
 // in the subscription.
-// The use of stable versions for sotw also deduplicates updates to clients if the cache updates are
+// The use of resource versions for sotw also deduplicates updates to clients if the cache updates are
 // not changing the content of the resource.
 // When used, the use of WithVersionPrefix is no longer needed to manage reconnection to other instances
 // and should not be used.
-func WithSotwStableVersions() LinearCacheOption {
+func WithSotwResourceVersions() LinearCacheOption {
 	return func(cache *LinearCache) {
-		cache.useStableVersionsInSotw = true
+		cache.useResourceVersionsInSotw = true
 	}
 }
 
@@ -253,10 +221,10 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 // computeResourceChange compares the subscription known resources and the cache current state to compute the list of resources
 // which have changed and should be notified to the user.
 //
-// The useStableVersion argument defines what version type to use for resources:
+// The useResourceVersion argument defines what version type to use for resources:
 //   - if set to false versions are based on when resources were updated in the cache.
 //   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
-func (cache *LinearCache) computeResourceChange(sub Subscription, useStableVersion bool) (updated, removed []string, err error) {
+func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool) (updated, removed []string, err error) {
 	var changedResources []string
 	var removedResources []string
 
@@ -268,7 +236,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useStableVersi
 				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
 				changedResources = append(changedResources, resourceName)
 			} else {
-				resourceVersion, err := resource.getVersion(useStableVersion)
+				resourceVersion, err := resource.getVersion(useResourceVersion)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
 				}
@@ -304,7 +272,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useStableVersi
 				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
 				changedResources = append(changedResources, resourceName)
 			} else {
-				resourceVersion, err := res.getVersion(useStableVersion)
+				resourceVersion, err := res.getVersion(useResourceVersion)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
 				}
@@ -329,7 +297,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useStableVersi
 
 func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (WatchResponse, error) {
 	sub := watch.getSubscription()
-	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useStableVersion())
+	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion())
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +356,7 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 	for _, resourceName := range resourcesToReturn {
 		cachedResource := cache.resources[resourceName]
 		resources = append(resources, cachedResource)
-		version, err := cachedResource.getVersion(watch.useStableVersion())
+		version, err := cachedResource.getVersion(watch.useResourceVersion())
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
 		}
@@ -403,8 +371,8 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 
 	// TODO(valerian-roche): remove this leak of delta/sotw behavior here.
 	responseVersion := cache.getVersion()
-	if watch.useStableVersion() && !watch.isDelta() {
-		responseVersion = cache.versionPrefix + computeSotwStableVersion(returnedVersions)
+	if watch.useResourceVersion() && !watch.isDelta() {
+		responseVersion = cache.versionPrefix + computeSotwResourceVersion(returnedVersions)
 	}
 
 	return watch.buildResponse(resources, removedResources, returnedVersions, responseVersion), nil
@@ -516,8 +484,8 @@ func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 	}
 
 	// We assume all resources passed to SetResources are changed.
-	// In delta and if stable versions are used for sotw, identical resources will not trigger watches.
-	// In sotw without stable versions used, all those resources will trigger watches, even if identical.
+	// In delta and if resource versions are used for sotw, identical resources will not trigger watches.
+	// In sotw without resource versions used, all those resources will trigger watches, even if identical.
 	for name, resource := range resources {
 		cache.resources[name] = newCachedResource(name, resource, version)
 		modified = append(modified, name)
@@ -568,13 +536,13 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 	// We could optimize the reconnection case here if:
 	//  - we take the assumption that clients will not start requesting wildcard while providing a version. We could then ignore requests providing the resources.
 	//  - we use the version as some form of hash of resources known, and we can then consider it as a way to correctly verify whether all resources are unchanged.
-	// When using the `WithSotwStableVersions` option, this optimization is activated and avoids resending all the dataset on wildcard watch resumption if no change has occurred.
+	// When using the `WithSotwResourceVersions` option, this optimization is activated and avoids resending all the dataset on wildcard watch resumption if no change has occurred.
 	watch := ResponseWatch{
-		Request:             request,
-		Response:            value,
-		subscription:        sub,
-		enableStableVersion: cache.useStableVersionsInSotw,
-		fullStateResponses:  ResourceRequiresFullStateInSotw(cache.typeURL),
+		Request:               request,
+		Response:              value,
+		subscription:          sub,
+		enableResourceVersion: cache.useResourceVersionsInSotw,
+		fullStateResponses:    ResourceRequiresFullStateInSotw(cache.typeURL),
 	}
 
 	cache.mu.Lock()
@@ -590,12 +558,12 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 		//  - is the first
 		//  - is wildcard
 		//  - provides a non-empty version, matching the version prefix
-		// and the cache uses stable versions, if the generated versions are the same as the previous one, we do not return the response.
+		// and the cache uses resource versions, if the generated versions are the same as the previous one, we do not return the response.
 		// This avoids resending all data if the new subscription is just a resumption of the previous one.
 		// This optimization is only done on wildcard as we cannot track if a subscription is "new" at this stage and needs to be returned.
 		// In the context of wildcard it could be incorrect if the subscription is newly wildcard, and we already returned all objects,
 		// but as of Q1-2024 there are no known usecases of a subscription becoming wildcard (in envoy of xds-grpc).
-		if cache.useStableVersionsInSotw && sub.IsWildcard() && request.GetResponseNonce() == "" && !replyEvenIfEmpty {
+		if cache.useResourceVersionsInSotw && sub.IsWildcard() && request.GetResponseNonce() == "" && !replyEvenIfEmpty {
 			if request.GetVersionInfo() != response.GetResponseVersion() {
 				// The response has a different returned version map as the request
 				shouldReply = true
