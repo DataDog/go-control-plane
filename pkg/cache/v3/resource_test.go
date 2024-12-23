@@ -18,7 +18,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
@@ -65,6 +64,7 @@ func TestValidate(t *testing.T) {
 	require.NoError(t, testScopedRoute.Validate())
 	require.NoError(t, testVirtualHost.Validate())
 	require.NoError(t, testListener.Validate())
+	require.NoError(t, testListenerDefault.Validate())
 	require.NoError(t, testScopedListener.Validate())
 	require.NoError(t, testRuntime.Validate())
 	require.NoError(t, testExtensionConfig.Validate())
@@ -82,72 +82,6 @@ func TestValidate(t *testing.T) {
 	}
 	if err := invalidRoute.GetVirtualHosts()[0].Validate(); err == nil {
 		t.Error("expected an error")
-	}
-}
-
-type customResource struct {
-	cluster.Filter // Any proto would work here.
-}
-
-const customName = "test-name"
-
-func (cs *customResource) GetName() string { return customName }
-
-var _ types.ResourceWithName = &customResource{}
-
-func TestGetResourceName(t *testing.T) {
-	if name := cache.GetResourceName(testEndpoint); name != clusterName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testEndpoint, name, clusterName)
-	}
-	if name := cache.GetResourceName(testCluster); name != clusterName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testCluster, name, clusterName)
-	}
-	if name := cache.GetResourceName(testRoute); name != routeName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testRoute, name, routeName)
-	}
-	if name := cache.GetResourceName(testScopedRoute); name != scopedRouteName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testScopedRoute, name, scopedRouteName)
-	}
-	if name := cache.GetResourceName(testVirtualHost); name != virtualHostName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testVirtualHost, name, virtualHostName)
-	}
-	if name := cache.GetResourceName(testListener); name != listenerName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testListener, name, listenerName)
-	}
-	if name := cache.GetResourceName(testRuntime); name != runtimeName {
-		t.Errorf("GetResourceName(%v) => got %q, want %q", testRuntime, name, runtimeName)
-	}
-	if name := cache.GetResourceName(&customResource{}); name != customName {
-		t.Errorf("GetResourceName(nil) => got %q, want %q", name, customName)
-	}
-	if name := cache.GetResourceName(nil); name != "" {
-		t.Errorf("GetResourceName(nil) => got %q, want none", name)
-	}
-}
-
-func TestGetResourceNames(t *testing.T) {
-	tests := []struct {
-		name  string
-		input []types.ResourceWithTTL
-		want  []string
-	}{
-		{
-			name:  "empty",
-			input: []types.ResourceWithTTL{},
-			want:  []string{},
-		},
-		{
-			name:  "many",
-			input: []types.ResourceWithTTL{{Resource: testRuntime}, {Resource: testListener}, {Resource: testListenerDefault}, {Resource: testVirtualHost}},
-			want:  []string{runtimeName, listenerName, listenerName, virtualHostName},
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			got := cache.GetResourceNames(test.input)
-			assert.ElementsMatch(t, test.want, got)
-		})
 	}
 }
 

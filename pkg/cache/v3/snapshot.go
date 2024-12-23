@@ -198,7 +198,7 @@ func (s *Snapshot) ConstructVersionMap() error {
 				return fmt.Errorf("failed to build resource version: %w", err)
 			}
 
-			s.VersionMap[typeURL][GetResourceName(r.Resource)] = v
+			s.VersionMap[typeURL][types.GetResourceName(r.Resource)] = v
 		}
 	}
 

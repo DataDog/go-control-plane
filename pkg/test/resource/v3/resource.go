@@ -615,7 +615,7 @@ func (ts *TestSnapshot) generateHTTPListeners(numListeners int, clusters []types
 		routeName := fmt.Sprintf("route-%s-%d", ts.Version, ts.currentPort)
 
 		// Evenly distribute routes amongst current number of clusters.
-		routeConfigs = append(routeConfigs, MakeRouteConfig(routeName, cache.GetResourceName(clusters[i%len(clusters)])))
+		routeConfigs = append(routeConfigs, MakeRouteConfig(routeName, types.GetResourceName(clusters[i%len(clusters)])))
 		listener := MakeRouteHTTPListener(ts.Xds, listenerName, ts.currentPort, routeName)
 		ts.addTLS(listener)
 		listeners = append(listeners, listener)
@@ -641,7 +641,7 @@ func (ts *TestSnapshot) generateScopedHTTPListeners(numListeners int, clusters [
 		routeName := fmt.Sprintf("route-%s-%d", ts.Version, ts.currentPort)
 
 		// Evenly distribute routes amongst current number of clusters.
-		routeConfigs = append(routeConfigs, MakeRouteConfig(routeName, cache.GetResourceName(clusters[i%len(clusters)])))
+		routeConfigs = append(routeConfigs, MakeRouteConfig(routeName, types.GetResourceName(clusters[i%len(clusters)])))
 		scopedRouteConfigs = append(scopedRouteConfigs, MakeScopedRouteConfig(scopedRouteName, routeName, []string{ts.getPath()}))
 		listener := MakeScopedRouteHTTPListener(ts.Xds, listenerName, ts.currentPort)
 		ts.addTLS(listener)
@@ -668,7 +668,7 @@ func (ts *TestSnapshot) generateVHDSHTTPListeners(numListeners int, clusters []t
 		virtualHostName := fmt.Sprintf("%s/%s", routeName, ts.getPath())
 
 		// Evenly distribute routes amongst current number of clusters.
-		virtualHosts = append(virtualHosts, MakeVirtualHost(virtualHostName, cache.GetResourceName(clusters[i%len(clusters)])))
+		virtualHosts = append(virtualHosts, MakeVirtualHost(virtualHostName, types.GetResourceName(clusters[i%len(clusters)])))
 		routeConfigs = append(routeConfigs, MakeVHDSRouteConfig(ts.Xds, routeName))
 		listener := MakeRouteHTTPListener(ts.Xds, listenerName, ts.currentPort, routeName)
 		ts.addTLS(listener)
@@ -691,7 +691,7 @@ func (ts *TestSnapshot) generateTCPListeners(numListeners int, clusters []types.
 		listenerName := fmt.Sprintf("listener-%d", ts.currentPort-ts.BasePort)
 
 		// Evenly distribute routes amongst current number of clusters.
-		listener := MakeTCPListener(listenerName, ts.currentPort, cache.GetResourceName(clusters[i%ts.NumClusters]))
+		listener := MakeTCPListener(listenerName, ts.currentPort, types.GetResourceName(clusters[i%ts.NumClusters]))
 		ts.addTLS(listener)
 		listeners = append(listeners, listener)
 

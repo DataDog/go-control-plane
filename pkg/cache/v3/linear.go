@@ -21,96 +21,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
+	"sync/atomic"
 
+	"github.com/envoyproxy/go-control-plane/internal/snapshot"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
 )
-
-// cachedResource is used to track resources added by the user in the cache.
-// It contains the resource itself and its associated version (currently in two different modes).
-type cachedResource struct {
-	name string
-
-	resource types.Resource
-	ttl      *time.Duration
-
-	// cacheVersion is the version of the cache at the time of last update, used in sotw.
-	cacheVersion string
-
-	marshalFunc                func() ([]byte, error)
-	computeResourceVersionFunc func() (string, error)
-}
-
-func newCachedResource(name string, res types.Resource, cacheVersion string) *cachedResource {
-	marshalFunc := sync.OnceValues(func() ([]byte, error) {
-		return MarshalResource(res)
-	})
-	return &cachedResource{
-		name:         name,
-		resource:     res,
-		cacheVersion: cacheVersion,
-		marshalFunc:  marshalFunc,
-		computeResourceVersionFunc: sync.OnceValues(func() (string, error) {
-			marshaled, err := marshalFunc()
-			if err != nil {
-				return "", fmt.Errorf("marshaling resource: %w", err)
-			}
-			return HashResource(marshaled), nil
-		}),
-	}
-}
-
-func newCachedResourceWithTTL(name string, res types.ResourceWithTTL, cacheVersion string) *cachedResource {
-	cachedRes := newCachedResource(name, res.Resource, cacheVersion)
-	cachedRes.ttl = res.TTL
-	return cachedRes
-}
-
-// getMarshaledResource lazily marshals the resource and returns the bytes.
-func (c *cachedResource) getMarshaledResource() ([]byte, error) {
-	return c.marshalFunc()
-}
-
-// getResourceVersion lazily hashes the resource and returns the stable hash used to track version changes.
-func (c *cachedResource) getResourceVersion() (string, error) {
-	return c.computeResourceVersionFunc()
-}
-
-// getVersion returns the requested version.
-func (c *cachedResource) getVersion(useResourceVersion bool) (string, error) {
-	if !useResourceVersion {
-		return c.cacheVersion, nil
-	}
-
-	return c.getResourceVersion()
-}
-
-type watch interface {
-	// isDelta indicates whether the watch is a delta one.
-	// It should not be used to take functional decisions, but is still currently used pending final changes.
-	// It can be used to generate statistics.
-	isDelta() bool
-	// useResourceVersion indicates whether versions returned in the response are built using resource versions instead of cache update versions.
-	useResourceVersion() bool
-	// sendFullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
-	// As a consequence, sending a response with no resources has a functional meaning of no matching resources available.
-	sendFullStateResponses() bool
-
-	getSubscription() Subscription
-	// buildResponse computes the actual WatchResponse object to be sent on the watch.
-	// cachedResource instances are passed by copy as their lazy accessors are not thread-safe.
-	buildResponse(updatedResources []*cachedResource, removedResources []string, returnedVersions map[string]string, version string) WatchResponse
-	// sendResponse sends the response for the watch.
-	// It must be called at most once.
-	sendResponse(resp WatchResponse)
-}
-
-type watches map[uint64]watch
-
-func newWatches() watches {
-	return make(watches)
-}
 
 // LinearCache supports collections of opaque resources. This cache has a
 // single collection indexed by resource names and manages resource versions
@@ -123,20 +40,19 @@ type LinearCache struct {
 	// decisions based on resource type (e.g. whether sotw must return full-state).
 	typeURL string
 
-	// resources contains all resources currently set in the cache and associated versions.
-	resources map[string]*cachedResource
+	snapshot *snapshot.TypedSnapshot
 
 	// resourceWatches keeps track of watches currently opened specifically tracking a resource.
 	// It does not contain wildcard watches.
 	// It can contain resources not present in resources.
-	resourceWatches map[string]watches
+	resourceWatches map[string]cacheWatches
 	// wildcardWatches keeps track of all wildcard watches currently opened.
-	wildcardWatches watches
+	wildcardWatches cacheWatches
 	// currentWatchID is used to index new watches.
 	currentWatchID uint64
 
 	// version is the current version of the cache. It is incremented each time resources are updated.
-	version uint64
+	version atomic.Uint64
 	// versionPrefix is used to modify the version returned to clients, and can be used to uniquely identify
 	// cache instances and avoid issues of version reuse.
 	versionPrefix string
@@ -152,6 +68,12 @@ type LinearCache struct {
 	log log.Logger
 
 	mu sync.RWMutex
+}
+
+type cacheWatches map[uint64]snapshot.Watch
+
+func newCacheWatches() cacheWatches {
+	return make(cacheWatches)
 }
 
 var _ Cache = &LinearCache{}
@@ -172,10 +94,8 @@ func WithVersionPrefix(prefix string) LinearCacheOption {
 
 // WithInitialResources initializes the initial set of resources.
 func WithInitialResources(resources map[string]types.Resource) LinearCacheOption {
-	return func(cache *LinearCache) {
-		for name, resource := range resources {
-			cache.resources[name] = newCachedResource(name, resource, "")
-		}
+	return func(c *LinearCache) {
+		c.snapshot.SetInitialResources(resources)
 	}
 }
 
@@ -201,186 +121,26 @@ func WithSotwResourceVersions() LinearCacheOption {
 func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	out := &LinearCache{
 		typeURL:         typeURL,
-		resources:       make(map[string]*cachedResource),
-		resourceWatches: make(map[string]watches),
-		wildcardWatches: newWatches(),
-		version:         0,
+		resourceWatches: make(map[string]cacheWatches),
+		wildcardWatches: newCacheWatches(),
 		currentWatchID:  0,
 		log:             log.NewDefaultLogger(),
 	}
+
+	out.snapshot = snapshot.NewTypedSnapshot(snapshot.WithUpdateCallback(out.notifyAll))
 	for _, opt := range opts {
 		opt(out)
 	}
-	for name, resource := range out.resources {
-		resource.cacheVersion = out.getVersion()
-		out.resources[name] = resource
-	}
+
 	return out
 }
 
-// computeResourceChange compares the subscription known resources and the cache current state to compute the list of resources
-// which have changed and should be notified to the user.
-//
-// The useResourceVersion argument defines what version type to use for resources:
-//   - if set to false versions are based on when resources were updated in the cache.
-//   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
-func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool) (updated, removed []string, err error) {
-	var changedResources []string
-	var removedResources []string
-
-	knownVersions := sub.ReturnedResources()
-	if sub.IsWildcard() {
-		for resourceName, resource := range cache.resources {
-			knownVersion, ok := knownVersions[resourceName]
-			if !ok {
-				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
-				changedResources = append(changedResources, resourceName)
-			} else {
-				resourceVersion, err := resource.getVersion(useResourceVersion)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
-				}
-				if knownVersion != resourceVersion {
-					// The client knows an outdated version.
-					changedResources = append(changedResources, resourceName)
-				}
-			}
-		}
-
-		// Negative check to identify resources that have been removed in the cache.
-		// Sotw does not support returning "deletions", but in the case of full state resources
-		// a response must then be returned.
-		for resourceName := range knownVersions {
-			if _, ok := cache.resources[resourceName]; !ok {
-				removedResources = append(removedResources, resourceName)
-			}
-		}
-	} else {
-		for resourceName := range sub.SubscribedResources() {
-			res, exists := cache.resources[resourceName]
-			knownVersion, known := knownVersions[resourceName]
-			if !exists {
-				if known {
-					// This resource was removed from the cache. If the type requires full state
-					// we need to return a response.
-					removedResources = append(removedResources, resourceName)
-				}
-				continue
-			}
-
-			if !known {
-				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
-				changedResources = append(changedResources, resourceName)
-			} else {
-				resourceVersion, err := res.getVersion(useResourceVersion)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
-				}
-				if knownVersion != resourceVersion {
-					// The client knows an outdated version.
-					changedResources = append(changedResources, resourceName)
-				}
-			}
-		}
-
-		for resourceName := range knownVersions {
-			// If the subscription no longer watches a resource,
-			// we mark it as unknown on the client side to ensure it will be resent to the client if subscribing again later on.
-			if _, ok := sub.SubscribedResources()[resourceName]; !ok {
-				removedResources = append(removedResources, resourceName)
-			}
-		}
-	}
-
-	return changedResources, removedResources, nil
-}
-
-func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (WatchResponse, error) {
-	sub := watch.getSubscription()
-	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion())
-	if err != nil {
-		return nil, err
-	}
-	if len(changedResources) == 0 && len(removedResources) == 0 && !replyEvenIfEmpty {
-		// Nothing changed.
-		return nil, nil
-	}
-
-	// In sotw the list of resources to actually return depends on:
-	//  - whether the type requires full-state in each reply (lds and cds).
-	//  - whether the request is wildcard.
-	// resourcesToReturn will include all the resource names to reply based on the changes detected.
-	var resourcesToReturn []string
-
-	switch {
-	// For lds and cds, answers will always include all existing subscribed resources, with no regard to which resource was changed or removed.
-	// For other types, the response only includes updated resources (sotw cannot notify for deletion).
-	case !watch.sendFullStateResponses():
-		// TODO(valerian-roche): remove this leak of delta/sotw behavior here.
-		if !watch.isDelta() && !replyEvenIfEmpty && len(changedResources) == 0 {
-			// If the request is not the initial one, and the type does not require full updates,
-			// do not return if nothing is to be set.
-			// For full-state resources an empty response does have a semantic meaning.
-			return nil, nil
-		}
-
-		// changedResources is already filtered based on the subscription.
-		resourcesToReturn = changedResources
-	case sub.IsWildcard():
-		// Include all resources for the type.
-		resourcesToReturn = make([]string, 0, len(cache.resources))
-		for resourceName := range cache.resources {
-			resourcesToReturn = append(resourcesToReturn, resourceName)
-		}
-	default:
-		// Include all resources matching the subscription, with no concern on whether it has been updated or not.
-		requestedResources := sub.SubscribedResources()
-		// The linear cache could be very large (e.g. containing all potential CLAs)
-		// Therefore drives on the subscription requested resources.
-		resourcesToReturn = make([]string, 0, len(requestedResources))
-		for resourceName := range requestedResources {
-			if _, ok := cache.resources[resourceName]; ok {
-				resourcesToReturn = append(resourcesToReturn, resourceName)
-			}
-		}
-	}
-
-	// returnedVersions includes all resources currently known to the subscription and their version.
-	returnedVersions := make(map[string]string, len(sub.ReturnedResources()))
-	// Clone the current returned versions. The cache should not alter the subscription.
-	for resourceName, version := range sub.ReturnedResources() {
-		returnedVersions[resourceName] = version
-	}
-
-	resources := make([]*cachedResource, 0, len(resourcesToReturn))
-	for _, resourceName := range resourcesToReturn {
-		cachedResource := cache.resources[resourceName]
-		resources = append(resources, cachedResource)
-		version, err := cachedResource.getVersion(watch.useResourceVersion())
-		if err != nil {
-			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
-		}
-		returnedVersions[resourceName] = version
-	}
-	// Cleanup resources no longer existing in the cache or no longer subscribed.
-	// In sotw we cannot return those if not full state,
-	// but this ensures we detect unsubscription then resubscription.
-	for _, resourceName := range removedResources {
-		delete(returnedVersions, resourceName)
-	}
-
-	// TODO(valerian-roche): remove this leak of delta/sotw behavior here.
-	responseVersion := cache.getVersion()
-	if watch.useResourceVersion() && !watch.isDelta() {
-		responseVersion = cache.versionPrefix + computeSotwResourceVersion(returnedVersions)
-	}
-
-	return watch.buildResponse(resources, removedResources, returnedVersions, responseVersion), nil
-}
-
 func (cache *LinearCache) notifyAll(modified []string) error {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
 	// Gather the list of watches impacted by the modified resources.
-	resourceWatches := newWatches()
+	resourceWatches := newCacheWatches()
 	for _, name := range modified {
 		for watchID, watch := range cache.resourceWatches[name] {
 			resourceWatches[watchID] = watch
@@ -388,27 +148,27 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 	}
 
 	for watchID, watch := range resourceWatches {
-		response, err := cache.computeResponse(watch, false)
+		response, err := cache.snapshot.ComputeResponse(watch, false, cache.getVersion())
 		if err != nil {
 			return err
 		}
 
 		if response != nil {
-			watch.sendResponse(response)
-			cache.removeWatch(watchID, watch.getSubscription())
+			watch.SendResponse(response)
+			cache.removeWatch(watchID, watch.GetSubscription())
 		} else {
 			cache.log.Infof("[Linear cache] Watch %d detected as triggered but no change was found", watchID)
 		}
 	}
 
 	for watchID, watch := range cache.wildcardWatches {
-		response, err := cache.computeResponse(watch, false)
+		response, err := cache.snapshot.ComputeResponse(watch, false, cache.getVersion())
 		if err != nil {
 			return err
 		}
 
 		if response != nil {
-			watch.sendResponse(response)
+			watch.SendResponse(response)
 			cache.removeWildcardWatch(watchID)
 		} else {
 			cache.log.Infof("[Linear cache] Wildcard watch %d detected as triggered but no change was found", watchID)
@@ -423,91 +183,37 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 	if res == nil {
 		return errors.New("nil resource")
 	}
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
 
-	cache.version++
-	cache.resources[name] = newCachedResource(name, res, cache.getVersion())
-
-	return cache.notifyAll([]string{name})
+	cache.incrementVersion()
+	return cache.snapshot.UpdateResources(map[string]types.Resource{name: res}, nil)
 }
 
 // DeleteResource removes a resource in the collection.
 func (cache *LinearCache) DeleteResource(name string) error {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	cache.version++
-	delete(cache.resources, name)
-
-	return cache.notifyAll([]string{name})
+	cache.incrementVersion()
+	return cache.snapshot.UpdateResources(nil, []string{name})
 }
 
 // UpdateResources updates/deletes a list of resources in the cache.
 // Calling UpdateResources instead of iterating on UpdateResource and DeleteResource
 // is significantly more efficient when using delta or wildcard watches.
 func (cache *LinearCache) UpdateResources(toUpdate map[string]types.Resource, toDelete []string) error {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	cache.version++
-	version := cache.getVersion()
-	modified := make([]string, 0, len(toUpdate)+len(toDelete))
-	for name, resource := range toUpdate {
-		cache.resources[name] = newCachedResource(name, resource, version)
-		modified = append(modified, name)
-	}
-	for _, name := range toDelete {
-		delete(cache.resources, name)
-		modified = append(modified, name)
-	}
-
-	return cache.notifyAll(modified)
+	cache.incrementVersion()
+	return cache.snapshot.UpdateResources(toUpdate, toDelete)
 }
 
 // SetResources replaces current resources with a new set of resources.
 // If only some resources are to be updated, UpdateResources is more efficient.
 func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	cache.version++
-	version := cache.getVersion()
-
-	modified := make([]string, 0, len(resources))
-	// Collect deleted resource names.
-	for name := range cache.resources {
-		if _, found := resources[name]; !found {
-			delete(cache.resources, name)
-			modified = append(modified, name)
-		}
-	}
-
-	// We assume all resources passed to SetResources are changed.
-	// In delta and if resource versions are used for sotw, identical resources will not trigger watches.
-	// In sotw without resource versions used, all those resources will trigger watches, even if identical.
-	for name, resource := range resources {
-		cache.resources[name] = newCachedResource(name, resource, version)
-		modified = append(modified, name)
-	}
-
-	if err := cache.notifyAll(modified); err != nil {
+	cache.incrementVersion()
+	if err := cache.snapshot.SetResources(resources); err != nil {
 		cache.log.Errorf("Failed to notify watches: %s", err.Error())
 	}
 }
 
 // GetResources returns current resources stored in the cache
 func (cache *LinearCache) GetResources() map[string]types.Resource {
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
-
-	// create a copy of our internal storage to avoid data races
-	// involving mutations of our backing map
-	resources := make(map[string]types.Resource, len(cache.resources))
-	for k, v := range cache.resources {
-		resources[k] = v.resource
-	}
-	return resources
+	return cache.snapshot.GetResources()
 }
 
 // The implementations of sotw and delta watches handling is nearly identical. The main distinctions are:
@@ -537,18 +243,15 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 	//  - we take the assumption that clients will not start requesting wildcard while providing a version. We could then ignore requests providing the resources.
 	//  - we use the version as some form of hash of resources known, and we can then consider it as a way to correctly verify whether all resources are unchanged.
 	// When using the `WithSotwResourceVersions` option, this optimization is activated and avoids resending all the dataset on wildcard watch resumption if no change has occurred.
-	watch := ResponseWatch{
-		Request:               request,
-		Response:              value,
-		subscription:          sub,
-		enableResourceVersion: cache.useResourceVersionsInSotw,
-		fullStateResponses:    ResourceRequiresFullStateInSotw(cache.typeURL),
-	}
+	watch := watches.NewResponseWatch(request, value, sub, cache.useResourceVersionsInSotw, ResourceRequiresFullStateInSotw(cache.typeURL), cache.versionPrefix)
 
+	// Lock to ensure a change in the cache will not be missed on the watch.
+	// The call to notifyAll must considered watches from the version of the cache when it is called.
+	// This lock could be removed by keeping a record of impacted objects per cache revision.
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	response, err := cache.computeResponse(watch, replyEvenIfEmpty)
+	response, err := cache.snapshot.ComputeResponse(watch, replyEvenIfEmpty, cache.getVersion())
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute the watch respnse: %w", err)
 	}
@@ -571,7 +274,7 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 				// We confirmed the content of the known resources, store them in the watch we create.
 				subscription := newWatchSubscription(sub)
 				subscription.returnedResources = response.GetReturnedResources()
-				watch.subscription = subscription
+				watch.Subscription = subscription
 				sub = subscription
 			}
 		} else {
@@ -581,7 +284,7 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 
 	if shouldReply {
 		cache.log.Debugf("[linear cache] replying to the watch with resources %v (subscription values %v, known %v)", response.GetReturnedResources(), sub.SubscribedResources(), sub.ReturnedResources())
-		watch.sendResponse(response)
+		watch.SendResponse(response)
 		return func() {}, nil
 	}
 
@@ -593,7 +296,7 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 		return nil, fmt.Errorf("request type %s does not match cache type %s", request.GetTypeUrl(), cache.typeURL)
 	}
 
-	watch := DeltaResponseWatch{Request: request, Response: value, subscription: sub}
+	watch := watches.NewDeltaResponseWatch(request, value, sub)
 
 	// On first request on a wildcard subscription, envoy does expect a response to come in to
 	// conclude initialization.
@@ -605,13 +308,13 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	response, err := cache.computeResponse(watch, replyEvenIfEmpty)
+	response, err := cache.snapshot.ComputeResponse(watch, replyEvenIfEmpty, cache.getVersion())
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute the watch respnse: %w", err)
 	}
 	if response != nil {
 		cache.log.Debugf("[linear cache] replying to the delta watch (subscription values %v, known %v)", sub.SubscribedResources(), sub.ReturnedResources())
-		watch.sendResponse(response)
+		watch.SendResponse(response)
 		return nil, nil
 	}
 
@@ -627,11 +330,11 @@ func (cache *LinearCache) nextWatchID() uint64 {
 }
 
 // Must be called under lock
-func (cache *LinearCache) trackWatch(watch watch) func() {
+func (cache *LinearCache) trackWatch(watch snapshot.Watch) func() {
 	cache.watchCount++
 
 	watchID := cache.nextWatchID()
-	sub := watch.getSubscription()
+	sub := watch.GetSubscription()
 	// Create open watches since versions are up to date.
 	if sub.IsWildcard() {
 		cache.log.Infof("[linear cache] open watch %d for %s all resources", watchID, cache.typeURL)
@@ -649,7 +352,7 @@ func (cache *LinearCache) trackWatch(watch watch) func() {
 	for name := range sub.SubscribedResources() {
 		watches, exists := cache.resourceWatches[name]
 		if !exists {
-			watches = newWatches()
+			watches = newCacheWatches()
 			cache.resourceWatches[name] = watches
 		}
 		watches[watchID] = watch
@@ -681,20 +384,23 @@ func (cache *LinearCache) removeWildcardWatch(watchID uint64) {
 	delete(cache.wildcardWatches, watchID)
 }
 
-func (cache *LinearCache) getVersion() string {
-	return cache.versionPrefix + strconv.FormatUint(cache.version, 10)
-}
-
 func (cache *LinearCache) Fetch(context.Context, *Request) (Response, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (cache *LinearCache) getVersion() string {
+	version := cache.version.Load()
+	return cache.versionPrefix + strconv.FormatUint(version, 10)
+}
+
+func (cache *LinearCache) incrementVersion() {
+	cache.version.Add(1)
 }
 
 // NumResources returns the number of resources currently in the cache.
 // As GetResources is building a clone it is expensive to get metrics otherwise.
 func (cache *LinearCache) NumResources() int {
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
-	return len(cache.resources)
+	return cache.snapshot.NumResources()
 }
 
 // NumWatches returns the number of active watches for a resource name.

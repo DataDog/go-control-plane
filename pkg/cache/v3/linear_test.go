@@ -116,8 +116,8 @@ func verifyResponseResources(t *testing.T, ch <-chan Response, expectedType, exp
 	}
 	out := r.(*RawResponse)
 	resourceNames := []string{}
-	for _, res := range out.resources {
-		resourceNames = append(resourceNames, res.name)
+	for _, res := range out.GetResources() {
+		resourceNames = append(resourceNames, res.Name)
 	}
 	assert.ElementsMatch(t, resourceNames, expectedResources)
 	return r
@@ -876,8 +876,8 @@ func TestLinearDeltaMultiResourceUpdates(t *testing.T) {
 	hashA = hashResource(t, a)
 	err = c.UpdateResources(map[string]types.Resource{"a": a, "d": d}, []string{"b"})
 	require.NoError(t, err)
-	assert.Contains(t, c.resources, "d", "resource with name d not found in cache")
-	assert.NotContains(t, c.resources, "b", "resource with name b was found in cache")
+	assert.Contains(t, c.GetResources(), "d", "resource with name d not found in cache")
+	assert.NotContains(t, c.GetResources(), "b", "resource with name b was found in cache")
 	resp = <-w
 	validateDeltaResponse(t, resp, []resourceInfo{{"a", hashA}}, []string{"b"})
 	// d is not watched currently
@@ -893,8 +893,8 @@ func TestLinearDeltaMultiResourceUpdates(t *testing.T) {
 	hashB = hashResource(t, b)
 	err = c.UpdateResources(map[string]types.Resource{"b": b}, []string{"d"})
 	require.NoError(t, err)
-	assert.Contains(t, c.resources, "b", "resource with name b not found in cache")
-	assert.NotContains(t, c.resources, "d", "resource with name d was found in cache")
+	assert.Contains(t, c.GetResources(), "b", "resource with name b not found in cache")
+	assert.NotContains(t, c.GetResources(), "d", "resource with name d was found in cache")
 	resp = <-w
 	validateDeltaResponse(t, resp, []resourceInfo{{"b", hashB}}, nil) // d is not watched and should not be returned
 	assert.Equal(t, 2, c.NumResources())
@@ -926,7 +926,7 @@ func TestLinearDeltaMultiResourceUpdates(t *testing.T) {
 	hashA = hashResource(t, a)
 	err = c.UpdateResources(map[string]types.Resource{"a": a}, []string{"d"})
 	require.NoError(t, err)
-	assert.NotContains(t, c.resources, "d", "resource with name d was found in cache")
+	assert.NotContains(t, c.GetResources(), "d", "resource with name d was found in cache")
 	verifyDeltaResponse(t, w, []resourceInfo{{"a", hashA}}, []string{"d"})
 
 	checkTotalWatchCount(t, c, 0)
