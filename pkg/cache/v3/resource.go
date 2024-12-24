@@ -85,18 +85,6 @@ func GetResponseTypeURL(responseType types.ResponseType) (string, error) {
 	}
 }
 
-// GetResourceName returns the resource name for a valid xDS response type.
-func GetResourceName(res types.Resource) string {
-	switch v := res.(type) {
-	case *endpoint.ClusterLoadAssignment:
-		return v.GetClusterName()
-	case types.ResourceWithName:
-		return v.GetName()
-	default:
-		return ""
-	}
-}
-
 // ResourceRequiresFullStateInSotw indicates whether when building the reply in Sotw,
 // the response must include all existing resources or can return only the modified ones
 func ResourceRequiresFullStateInSotw(typeURL resource.Type) bool {
@@ -115,27 +103,17 @@ func ResourceRequiresFullStateInSotw(typeURL resource.Type) bool {
 	}
 }
 
-// GetResourceName returns the resource names for a list of valid xDS response types.
-func GetResourceNames(resources []types.ResourceWithTTL) []string {
-	out := make([]string, len(resources))
-	for i, r := range resources {
-		out[i] = GetResourceName(r.Resource)
-	}
-	return out
-}
-
-// getCachedResourceNames returns the resource names for a list of valid xDS response types.
-func getCachedResourceNames(resources []*cachedResource) []string {
-	out := make([]string, len(resources))
-	for i, r := range resources {
-		out[i] = GetResourceName(r.resource)
-	}
-	return out
-}
-
 // MarshalResource converts the Resource to MarshaledResource.
 func MarshalResource(resource types.Resource) (types.MarshaledResource, error) {
 	return proto.MarshalOptions{Deterministic: true}.Marshal(resource)
+}
+
+// HashResource will take a resource and create a SHA256 hash sum out of the marshaled bytes
+func HashResource(resource []byte) string {
+	hasher := sha256.New()
+	hasher.Write(resource)
+
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // GetResourceReferences returns a map of dependent resources keyed by resource type, given a map of resources.
@@ -277,12 +255,4 @@ func getScopedRouteReferences(src *route.ScopedRouteConfiguration, out map[resou
 
 		mapMerge(out[resource.RouteType], routes)
 	}
-}
-
-// HashResource will take a resource and create a SHA256 hash sum out of the marshaled bytes
-func HashResource(resource []byte) string {
-	hasher := sha256.New()
-	hasher.Write(resource)
-
-	return hex.EncodeToString(hasher.Sum(nil))
 }

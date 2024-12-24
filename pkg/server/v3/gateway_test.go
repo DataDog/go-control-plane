@@ -23,6 +23,7 @@ import (
 	"testing/iotest"
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
@@ -33,21 +34,21 @@ func TestGateway(t *testing.T) {
 	config := makeMockConfigWatcher()
 	config.responses = map[string][]cache.Response{
 		resource.ClusterType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: resource.ClusterType},
 				"2",
 				[]types.ResourceWithTTL{{Resource: cluster}},
 			),
 		},
 		resource.RouteType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: resource.RouteType},
 				"3",
 				[]types.ResourceWithTTL{{Resource: route}},
 			),
 		},
 		resource.ListenerType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: resource.ListenerType},
 				"4",
 				[]types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},

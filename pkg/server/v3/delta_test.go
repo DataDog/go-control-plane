@@ -15,6 +15,7 @@ import (
 	"go.uber.org/goleak"
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	rsrc "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
@@ -79,7 +80,7 @@ func (config *mockConfigWatcher) CreateDeltaWatch(req *discovery.DeltaDiscoveryR
 	}
 
 	if len(filtered)+len(toRemove) > 0 {
-		out <- cache.NewTestRawDeltaResponse(
+		out <- watches.NewTestRawDeltaResponse(
 			req,
 			"",
 			filtered,

@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/envoyproxy/go-control-plane/internal/snapshot"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
 )
@@ -247,7 +249,7 @@ func (cache *snapshotCache) SetSnapshot(ctx context.Context, node string, snapsh
 
 func (cache *snapshotCache) respondSOTWWatches(ctx context.Context, info *statusInfo, snapshot ResourceSnapshot) error {
 	// responder callback for SOTW watches
-	respond := func(watch ResponseWatch, id int64) error {
+	respond := func(watch watches.ResponseWatch, id int64) error {
 		version := snapshot.GetVersion(watch.Request.GetTypeUrl())
 		if version != watch.Request.GetVersionInfo() {
 			cache.log.Debugf("respond open watch %d %s %v with new version %q", id, watch.Request.GetTypeUrl(), watch.Request.GetResourceNames(), version)
@@ -310,7 +312,7 @@ func (cache *snapshotCache) respondDeltaWatches(ctx context.Context, info *statu
 				snapshot,
 				watch.Request,
 				watch.Response,
-				watch.subscription,
+				watch.Subscription,
 			)
 			if err != nil {
 				return err
@@ -328,7 +330,7 @@ func (cache *snapshotCache) respondDeltaWatches(ctx context.Context, info *statu
 				snapshot,
 				watch.Request,
 				watch.Response,
-				watch.subscription,
+				watch.Subscription,
 			)
 			if err != nil {
 				return err
@@ -402,7 +404,7 @@ func (cache *snapshotCache) CreateWatch(request *Request, sub Subscription, valu
 	info.lastWatchRequestTime = time.Now()
 	info.mu.Unlock()
 
-	createWatch := func(watch ResponseWatch) func() {
+	createWatch := func(watch watches.ResponseWatch) func() {
 		watchID := cache.nextWatchID()
 		cache.log.Debugf("open watch %d for %s %v from nodeID %q, version %q", watchID, request.GetTypeUrl(), sub.SubscribedResources(), nodeID, request.GetVersionInfo())
 		info.mu.Lock()
@@ -411,7 +413,7 @@ func (cache *snapshotCache) CreateWatch(request *Request, sub Subscription, valu
 		return cache.cancelWatch(nodeID, watchID)
 	}
 
-	watch := ResponseWatch{Request: request, Response: value, subscription: sub, fullStateResponses: ResourceRequiresFullStateInSotw(request.GetTypeUrl())}
+	watch := watches.NewResponseWatch(request, value, sub, false, ResourceRequiresFullStateInSotw(request.GetTypeUrl()), "")
 
 	snapshot, exists := cache.snapshots[nodeID]
 	if !exists {
@@ -480,7 +482,7 @@ func (cache *snapshotCache) cancelWatch(nodeID string, watchID int64) func() {
 
 // Respond to a watch with the snapshot value. The value channel should have capacity not to block.
 // TODO(kuat) do not respond always, see issue https://github.com/envoyproxy/go-control-plane/issues/46
-func (cache *snapshotCache) respond(ctx context.Context, watch ResponseWatch, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) error {
+func (cache *snapshotCache) respond(ctx context.Context, watch watches.ResponseWatch, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) error {
 	request := watch.Request
 	// for ADS, the request names must match the snapshot names
 	// if they do not, then the watch is never responded, and it is expected that envoy makes another request
@@ -502,7 +504,7 @@ func (cache *snapshotCache) respond(ctx context.Context, watch ResponseWatch, re
 }
 
 func createResponse(ctx context.Context, request *Request, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) Response {
-	filtered := make([]*cachedResource, 0, len(resources))
+	filtered := make([]*snapshot.CachedResource, 0, len(resources))
 	returnedResources := make(map[string]string, len(resources))
 
 	// Reply only with the requested resources. Envoy may ask each resource
@@ -512,25 +514,18 @@ func createResponse(ctx context.Context, request *Request, resources map[string]
 		set := nameSet(request.GetResourceNames())
 		for name, resource := range resources {
 			if set[name] {
-				filtered = append(filtered, newCachedResourceWithTTL(name, resource, version))
+				filtered = append(filtered, snapshot.NewCachedResourceWithTTL(name, resource, version))
 				returnedResources[name] = version
 			}
 		}
 	} else {
 		for name, resource := range resources {
-			filtered = append(filtered, newCachedResourceWithTTL(name, resource, version))
+			filtered = append(filtered, snapshot.NewCachedResourceWithTTL(name, resource, version))
 			returnedResources[name] = version
 		}
 	}
 
-	return &RawResponse{
-		Request:           request,
-		Version:           version,
-		resources:         filtered,
-		returnedResources: returnedResources,
-		Heartbeat:         heartbeat,
-		Ctx:               ctx,
-	}
+	return watches.NewRawResponse(ctx, request, version, filtered, returnedResources, heartbeat)
 }
 
 // CreateDeltaWatch returns a watch for a delta xDS request which implements the Simple SnapshotCache.
@@ -580,7 +575,7 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 			cache.log.Infof("open delta watch ID:%d for %s Resources:%v from nodeID: %q", watchID, t, sub.SubscribedResources(), nodeID)
 		}
 
-		info.setDeltaResponseWatch(watchID, DeltaResponseWatch{Request: request, Response: value, subscription: sub})
+		info.setDeltaResponseWatch(watchID, watches.NewDeltaResponseWatch(request, value, sub))
 		return cache.cancelDeltaWatch(nodeID, watchID), nil
 	}
 
@@ -597,10 +592,10 @@ func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceS
 	// Only send a response if there were changes
 	// We want to respond immediately for the first wildcard request in a stream, even if the response is empty
 	// otherwise, envoy won't complete initialization
-	if len(resp.resources) > 0 || len(resp.removedResources) > 0 || (sub.IsWildcard() && request.ResponseNonce == "") {
+	if !resp.IsEmpty() || (sub.IsWildcard() && request.ResponseNonce == "") {
 		if cache.log != nil {
-			cache.log.Debugf("node: %s, sending delta response for typeURL %s with resources: %v removed resources: %v with wildcard: %t",
-				request.GetNode().GetId(), request.GetTypeUrl(), getCachedResourceNames(resp.resources), resp.removedResources, sub.IsWildcard())
+			cache.log.Debugf("node: %s, sending delta response for typeURL %s with wildcard: %t",
+				request.GetNode().GetId(), request.GetTypeUrl(), sub.IsWildcard())
 		}
 		select {
 		case value <- resp:

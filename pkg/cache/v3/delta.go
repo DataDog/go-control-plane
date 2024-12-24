@@ -17,6 +17,8 @@ package cache
 import (
 	"context"
 
+	"github.com/envoyproxy/go-control-plane/internal/snapshot"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 )
 
@@ -29,14 +31,14 @@ type resourceContainer struct {
 func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscription, resources resourceContainer, cacheVersion string) *RawDeltaResponse {
 	// variables to build our response with
 	var nextVersionMap map[string]string
-	var filtered []*cachedResource
+	var filtered []*snapshot.CachedResource
 	var toRemove []string
 
 	// If we are handling a wildcard request, we want to respond with all resources
 	switch {
 	case sub.IsWildcard():
 		if len(sub.ReturnedResources()) == 0 {
-			filtered = make([]*cachedResource, 0, len(resources.resourceMap))
+			filtered = make([]*snapshot.CachedResource, 0, len(resources.resourceMap))
 		}
 		nextVersionMap = make(map[string]string, len(resources.resourceMap))
 		for name, r := range resources.resourceMap {
@@ -46,7 +48,7 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 			nextVersionMap[name] = version
 			prevVersion, found := sub.ReturnedResources()[name]
 			if !found || (prevVersion != version) {
-				filtered = append(filtered, newCachedResource(name, r, version))
+				filtered = append(filtered, snapshot.NewCachedResource(name, r, version))
 			}
 		}
 
@@ -66,7 +68,7 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 			if r, ok := resources.resourceMap[name]; ok {
 				nextVersion := resources.versionMap[name]
 				if prevVersion != nextVersion {
-					filtered = append(filtered, newCachedResource(name, r, nextVersion))
+					filtered = append(filtered, snapshot.NewCachedResource(name, r, nextVersion))
 				}
 				nextVersionMap[name] = nextVersion
 			} else if found {
@@ -75,12 +77,5 @@ func createDeltaResponse(ctx context.Context, req *DeltaRequest, sub Subscriptio
 		}
 	}
 
-	return &RawDeltaResponse{
-		DeltaRequest:      req,
-		resources:         filtered,
-		removedResources:  toRemove,
-		nextVersionMap:    nextVersionMap,
-		SystemVersionInfo: cacheVersion,
-		Ctx:               ctx,
-	}
+	return watches.NewRawDeltaResponse(ctx, req, cacheVersion, filtered, toRemove, nextVersionMap)
 }

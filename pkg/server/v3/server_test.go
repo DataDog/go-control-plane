@@ -31,6 +31,7 @@ import (
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/envoyproxy/go-control-plane/internal/watches"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
@@ -188,63 +189,63 @@ var (
 func makeResponses() map[string][]cache.Response {
 	return map[string][]cache.Response{
 		rsrc.EndpointType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
 				"1",
 				[]types.ResourceWithTTL{{Resource: endpoint}},
 			),
 		},
 		rsrc.ClusterType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType},
 				"2",
 				[]types.ResourceWithTTL{{Resource: cluster}},
 			),
 		},
 		rsrc.RouteType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.RouteType},
 				"3",
 				[]types.ResourceWithTTL{{Resource: route}},
 			),
 		},
 		rsrc.ScopedRouteType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.ScopedRouteType},
 				"4",
 				[]types.ResourceWithTTL{{Resource: scopedRoute}},
 			),
 		},
 		rsrc.VirtualHostType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
 				"5",
 				[]types.ResourceWithTTL{{Resource: virtualHost}},
 			),
 		},
 		rsrc.ListenerType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.ListenerType},
 				"6",
 				[]types.ResourceWithTTL{{Resource: httpListener}, {Resource: httpScopedListener}},
 			),
 		},
 		rsrc.SecretType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.SecretType},
 				"7",
 				[]types.ResourceWithTTL{{Resource: secret}},
 			),
 		},
 		rsrc.RuntimeType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.RuntimeType},
 				"8",
 				[]types.ResourceWithTTL{{Resource: runtime}},
 			),
 		},
 		rsrc.ExtensionConfigType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: rsrc.ExtensionConfigType},
 				"9",
 				[]types.ResourceWithTTL{{Resource: extensionConfig}},
@@ -252,7 +253,7 @@ func makeResponses() map[string][]cache.Response {
 		},
 		// Pass-through type (xDS does not exist for this type)
 		opaqueType: {
-			cache.NewTestRawResponse(
+			watches.NewTestRawResponse(
 				&discovery.DiscoveryRequest{TypeUrl: opaqueType},
 				"10",
 				[]types.ResourceWithTTL{{Resource: opaque}},

@@ -15,7 +15,7 @@ type Resources struct {
 func IndexResourcesByName(items []types.ResourceWithTTL) map[string]types.ResourceWithTTL {
 	indexed := make(map[string]types.ResourceWithTTL, len(items))
 	for _, item := range items {
-		indexed[GetResourceName(item.Resource)] = item
+		indexed[types.GetResourceName(item.Resource)] = item
 	}
 	return indexed
 }
@@ -24,7 +24,7 @@ func IndexResourcesByName(items []types.ResourceWithTTL) map[string]types.Resour
 func IndexRawResourcesByName(items []types.Resource) map[string]types.Resource {
 	indexed := make(map[string]types.Resource, len(items))
 	for _, item := range items {
-		indexed[GetResourceName(item)] = item
+		indexed[types.GetResourceName(item)] = item
 	}
 	return indexed
 }
