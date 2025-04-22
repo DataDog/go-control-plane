@@ -597,10 +597,7 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 
 	// On first request on a wildcard subscription, envoy does expect a response to come in to
 	// conclude initialization.
-	replyEvenIfEmpty := false
-	if sub.IsWildcard() && request.GetResponseNonce() == "" {
-		replyEvenIfEmpty = true
-	}
+	replyEvenIfEmpty := sub.IsWildcard() && request.GetResponseNonce() == ""
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
