@@ -142,7 +142,7 @@ func validateDeltaResponse(t *testing.T, resp DeltaResponse, resources []resourc
 		}
 		assert.Truef(t, found, "resource with name %q not found in response", r.name)
 	}
-	assert.Equalf(t, out.GetTypeUrl(), validationCtx.expectedType, "unexpected type URL: received %s and expected %s", out.GetTypeUrl(), validationCtx.expectedType)
+	assert.Equalf(t, validationCtx.expectedType, out.GetTypeUrl(), "unexpected type URL: received %s and expected %s", out.GetTypeUrl(), validationCtx.expectedType)
 	assert.Lenf(t, out.GetRemovedResources(), len(deleted), "unexpected number of removed resurces: got %d, want %d", len(out.GetRemovedResources()), len(deleted))
 	for _, r := range deleted {
 		found := false
