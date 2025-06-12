@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"maps"
 
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
@@ -92,6 +93,7 @@ type watch interface {
 	// It can be used to generate statistics.
 	isDelta() bool
 	// useResourceVersion indicates whether versions returned in the response are built using resource versions instead of cache update versions.
+	nodeId() string
 	useResourceVersion() bool
 	// sendFullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
 	// As a consequence, sending a response with no resources has a functional meaning of no matching resources available.
@@ -135,6 +137,9 @@ type LinearCache struct {
 	// currentWatchID is used to index new watches.
 	currentWatchID uint64
 
+	// map[nodeId][]resource_name
+	resourcesPerNode map[string]map[string]struct{}
+
 	// version is the current version of the cache. It is incremented each time resources are updated.
 	version uint64
 	// versionPrefix is used to modify the version returned to clients, and can be used to uniquely identify
@@ -148,6 +153,8 @@ type LinearCache struct {
 	useResourceVersionsInSotw bool
 
 	watchCount int
+
+	customWildcardMode bool
 
 	log log.Logger
 
@@ -182,6 +189,16 @@ func WithInitialResources(resources map[string]types.Resource) LinearCacheOption
 func WithLogger(log log.Logger) LinearCacheOption {
 	return func(cache *LinearCache) {
 		cache.log = log
+	}
+}
+
+// WithCustomWildcardMode, for wildcard requests to node id
+// the resources returned would be defined by the resources set
+// with LinearCache.UpdateNodeWildcardResources
+// if a resource does not have
+func WithCustomWildCardMode(mode bool) LinearCacheOption {
+	return func(cache *LinearCache) {
+		cache.customWildcardMode = mode
 	}
 }
 
@@ -224,12 +241,14 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 // The useResourceVersion argument defines what version type to use for resources:
 //   - if set to false versions are based on when resources were updated in the cache.
 //   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
-func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool) (updated, removed []string, err error) {
+//
+// nodeId is just the nodeId of the watch. It is used to decide what resources to return for wildcard watches
+func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool, nodeId string) (updated, removed []string, err error) {
 	var changedResources []string
 	var removedResources []string
 
 	knownVersions := sub.ReturnedResources()
-	if sub.IsWildcard() {
+	if sub.IsWildcard() && !cache.customWildcardMode {
 		for resourceName, resource := range cache.resources {
 			knownVersion, ok := knownVersions[resourceName]
 			if !ok {
@@ -256,7 +275,16 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 			}
 		}
 	} else {
-		for resourceName := range sub.SubscribedResources() {
+		combinedResources := maps.Clone(sub.SubscribedResources())
+
+		if cache.customWildcardMode {
+			if resources, ok := cache.resourcesPerNode[nodeId]; ok {
+				maps.Copy(combinedResources, resources)
+			}
+		}
+
+		// Add wildcard computation and take union with below
+		for resourceName := range combinedResources {
 			res, exists := cache.resources[resourceName]
 			knownVersion, known := knownVersions[resourceName]
 			if !exists {
@@ -297,7 +325,11 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 
 func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (WatchResponse, error) {
 	sub := watch.getSubscription()
-	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion())
+	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion(), watch.nodeId())
+	fmt.Printf(
+		"-- sub %v\n-- replyEvenIfEmpty %v\n-- changedResources %v\n-- removedResources %v\n",
+		sub, replyEvenIfEmpty, changedResources, removedResources,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -377,6 +409,28 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 
 	return watch.buildResponse(resources, removedResources, returnedVersions, responseVersion), nil
 }
+func (cache *LinearCache) notifyAllForNode(nodeId string) error {
+	for watchID, watch := range cache.wildcardWatches {
+		// TODO make this non linear with a map of nodeid to watches
+		if watch.nodeId() != nodeId {
+			continue
+		}
+		response, err := cache.computeResponse(watch, false)
+		if err != nil {
+			return err
+		}
+
+		if response != nil {
+			watch.sendResponse(response)
+			cache.removeWildcardWatch(watchID)
+		} else {
+			cache.log.Infof("[Linear cache] Wildcard watch %d detected as triggered but no change was found", watchID)
+		}
+	}
+
+	// wildcard version of
+	return nil
+}
 
 func (cache *LinearCache) notifyAll(modified []string) error {
 	// Gather the list of watches impacted by the modified resources.
@@ -430,6 +484,20 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 	cache.resources[name] = newCachedResource(name, res, cache.getVersion())
 
 	return cache.notifyAll([]string{name})
+}
+
+func (cache *LinearCache) UpdateWilcardResourcesForNode(nodeId string, resources map[string]struct{}) error {
+	if !cache.customWildcardMode {
+		return fmt.Errorf("In order to use 'UpdateWilcardResourcesForNode', CustomWildCardMode must be set set to true")
+	}
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.version++
+	cache.resourcesPerNode[nodeId] = resources
+
+	return cache.notifyAllForNode(nodeId)
 }
 
 // DeleteResource removes a resource in the collection.
