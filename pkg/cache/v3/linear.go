@@ -224,6 +224,7 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 		version:         0,
 		currentWatchID:  0,
 		log:             log.NewDefaultLogger(),
+		resourcesPerNode: make(map[string]map[string]struct{}),
 	}
 	for _, opt := range opts {
 		opt(out)
@@ -277,11 +278,15 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 	} else {
 		combinedResources := maps.Clone(sub.SubscribedResources())
 
+		fmt.Printf("customWildcardMode nodeid:  %v %q\n", cache.customWildcardMode, nodeId)
+		fmt.Printf("resourcesPerNode:  %v\n", cache.resourcesPerNode)
 		if cache.customWildcardMode {
 			if resources, ok := cache.resourcesPerNode[nodeId]; ok {
+				fmt.Printf("computeResourceChange resourcesPerNode %q %v\n", nodeId, resources)
 				maps.Copy(combinedResources, resources)
 			}
 		}
+		fmt.Printf("combinedresources %v\n", combinedResources)
 
 		// Add wildcard computation and take union with below
 		for resourceName := range combinedResources {
@@ -314,7 +319,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 		for resourceName := range knownVersions {
 			// If the subscription no longer watches a resource,
 			// we mark it as unknown on the client side to ensure it will be resent to the client if subscribing again later on.
-			if _, ok := sub.SubscribedResources()[resourceName]; !ok {
+			if _, ok := combinedResources[resourceName]; !ok {
 				removedResources = append(removedResources, resourceName)
 			}
 		}
@@ -327,7 +332,7 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 	sub := watch.getSubscription()
 	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion(), watch.nodeId())
 	fmt.Printf(
-		"-- sub %v\n-- replyEvenIfEmpty %v\n-- changedResources %v\n-- removedResources %v\n",
+		"-- sub %#v\n-- replyEvenIfEmpty %v\n-- changedResources %v\n-- removedResources %v\n",
 		sub, replyEvenIfEmpty, changedResources, removedResources,
 	)
 	if err != nil {
@@ -358,19 +363,25 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 
 		// changedResources is already filtered based on the subscription.
 		resourcesToReturn = changedResources
-	case sub.IsWildcard():
+	case sub.IsWildcard() && !cache.customWildcardMode:
 		// Include all resources for the type.
 		resourcesToReturn = make([]string, 0, len(cache.resources))
 		for resourceName := range cache.resources {
 			resourcesToReturn = append(resourcesToReturn, resourceName)
 		}
 	default:
+		combinedResources := maps.Clone(sub.SubscribedResources())
+		if cache.customWildcardMode {
+			if resources, ok := cache.resourcesPerNode[watch.nodeId()]; ok {
+				maps.Copy(combinedResources, resources)
+			}
+		}
+
 		// Include all resources matching the subscription, with no concern on whether it has been updated or not.
-		requestedResources := sub.SubscribedResources()
 		// The linear cache could be very large (e.g. containing all potential CLAs)
 		// Therefore drives on the subscription requested resources.
-		resourcesToReturn = make([]string, 0, len(requestedResources))
-		for resourceName := range requestedResources {
+		resourcesToReturn = make([]string, 0, len(combinedResources))
+		for resourceName := range combinedResources {
 			if _, ok := cache.resources[resourceName]; ok {
 				resourcesToReturn = append(resourcesToReturn, resourceName)
 			}
