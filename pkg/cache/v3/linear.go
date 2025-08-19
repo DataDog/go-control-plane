@@ -278,15 +278,11 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 	} else {
 		combinedResources := maps.Clone(sub.SubscribedResources())
 
-		fmt.Printf("customWildcardMode nodeid:  %v %q\n", cache.customWildcardMode, nodeId)
-		fmt.Printf("resourcesPerNode:  %v\n", cache.resourcesPerNode)
 		if cache.customWildcardMode {
 			if resources, ok := cache.resourcesPerNode[nodeId]; ok {
-				fmt.Printf("computeResourceChange resourcesPerNode %q %v\n", nodeId, resources)
 				maps.Copy(combinedResources, resources)
 			}
 		}
-		fmt.Printf("combinedresources %v\n", combinedResources)
 
 		// Add wildcard computation and take union with below
 		for resourceName := range combinedResources {
@@ -331,10 +327,6 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (WatchResponse, error) {
 	sub := watch.getSubscription()
 	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion(), watch.nodeId())
-	fmt.Printf(
-		"-- sub %#v\n-- replyEvenIfEmpty %v\n-- changedResources %v\n-- removedResources %v\n",
-		sub, replyEvenIfEmpty, changedResources, removedResources,
-	)
 	if err != nil {
 		return nil, err
 	}

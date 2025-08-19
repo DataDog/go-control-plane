@@ -17,7 +17,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -41,10 +40,6 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	rlsconfigservice "github.com/envoyproxy/go-control-plane/ratelimit/service/ratelimit/v3"
 )
-
-func init() {
-	fmt.Printf("ZHIYAN go-control-plane\n")
-}
 
 // Server is a collection of handlers for streaming discovery requests.
 type Server interface {
