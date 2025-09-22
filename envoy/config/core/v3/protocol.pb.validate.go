@@ -429,12 +429,13 @@ func (m *QuicProtocolOptions) validate(all bool) error {
 			errors = append(errors, err)
 		} else {
 
+			lte := time.Duration(600*time.Second + 0*time.Nanosecond)
 			gte := time.Duration(1*time.Second + 0*time.Nanosecond)
 
-			if dur < gte {
+			if dur < gte || dur > lte {
 				err := QuicProtocolOptionsValidationError{
 					field:  "IdleNetworkTimeout",
-					reason: "value must be greater than or equal to 1s",
+					reason: "value must be inside range [1s, 10m0s]",
 				}
 				if !all {
 					return err

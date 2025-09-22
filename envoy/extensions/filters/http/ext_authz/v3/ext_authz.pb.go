@@ -45,65 +45,60 @@ type ExtAuthz struct {
 	// API version for ext_authz transport protocol. This describes the ext_authz gRPC endpoint and
 	// version of messages used on the wire.
 	TransportApiVersion v3.ApiVersion `protobuf:"varint,12,opt,name=transport_api_version,json=transportApiVersion,proto3,enum=envoy.config.core.v3.ApiVersion" json:"transport_api_version,omitempty"`
-	// Changes the filter's behavior on errors:
+	//	Changes filter's behavior on errors:
 	//
-	// #. When set to “true“, the filter will “accept“ the client request even if communication with
-	//
-	//	the authorization service has failed, or if the authorization service has returned an HTTP 5xx
+	//	1. When set to true, the filter will ``accept`` client request even if the communication with
+	//	the authorization service has failed, or if the authorization service has returned a HTTP 5xx
 	//	error.
 	//
-	// #. When set to “false“, the filter will “reject“ client requests and return “Forbidden“
+	//	2. When set to false, ext-authz will ``reject`` client requests and return a ``Forbidden``
+	//	response if the communication with the authorization service has failed, or if the
+	//	authorization service has returned a HTTP 5xx error.
 	//
-	//	if communication with the authorization service has failed, or if the authorization service
-	//	has returned an HTTP 5xx error.
-	//
-	// Errors can always be tracked in the :ref:`stats <config_http_filters_ext_authz_stats>`.
+	// Note that errors can be “always“ tracked in the :ref:`stats
+	// <config_http_filters_ext_authz_stats>`.
 	FailureModeAllow bool `protobuf:"varint,2,opt,name=failure_mode_allow,json=failureModeAllow,proto3" json:"failure_mode_allow,omitempty"`
-	// When “failure_mode_allow“ and “failure_mode_allow_header_add“ are both set to “true“,
+	// When “failure_mode_allow“ and “failure_mode_allow_header_add“ are both set to true,
 	// “x-envoy-auth-failure-mode-allowed: true“ will be added to request headers if the communication
 	// with the authorization service has failed, or if the authorization service has returned a
 	// HTTP 5xx error.
 	FailureModeAllowHeaderAdd bool `protobuf:"varint,19,opt,name=failure_mode_allow_header_add,json=failureModeAllowHeaderAdd,proto3" json:"failure_mode_allow_header_add,omitempty"`
-	// Enables the filter to buffer the client request body and send it within the authorization request.
-	// The “x-envoy-auth-partial-body: false|true“ metadata header will be added to the authorization
-	// request indicating whether the body data is partial.
+	// Enables filter to buffer the client request body and send it within the authorization request.
+	// A “x-envoy-auth-partial-body: false|true“ metadata header will be added to the authorization
+	// request message indicating if the body data is partial.
 	WithRequestBody *BufferSettings `protobuf:"bytes,5,opt,name=with_request_body,json=withRequestBody,proto3" json:"with_request_body,omitempty"`
-	// Clears the route cache in order to allow the external authorization service to correctly affect
-	// routing decisions. The filter clears all cached routes when:
+	// Clears route cache in order to allow the external authorization service to correctly affect
+	// routing decisions. Filter clears all cached routes when:
 	//
-	// #. The field is set to “true“.
+	// 1. The field is set to “true“.
 	//
-	// #. The status returned from the authorization service is an HTTP 200 or gRPC 0.
+	// 2. The status returned from the authorization service is a HTTP 200 or gRPC 0.
 	//
-	// #. At least one “authorization response header“ is added to the client request, or is used to
-	//
-	//	alter another client request header.
+	// 3. At least one “authorization response header“ is added to the client request, or is used for
+	// altering another client request header.
 	ClearRouteCache bool `protobuf:"varint,6,opt,name=clear_route_cache,json=clearRouteCache,proto3" json:"clear_route_cache,omitempty"`
 	// Sets the HTTP status that is returned to the client when the authorization server returns an error
 	// or cannot be reached. The default status is HTTP 403 Forbidden.
 	StatusOnError *v31.HttpStatus `protobuf:"bytes,7,opt,name=status_on_error,json=statusOnError,proto3" json:"status_on_error,omitempty"`
-	// When this is set to “true“, the filter will check the :ref:`ext_authz response
-	// <envoy_v3_api_msg_service.auth.v3.CheckResponse>` for invalid header and
+	// When this is set to true, the filter will check the :ref:`ext_authz response
+	// <envoy_v3_api_msg_service.auth.v3.CheckResponse>` for invalid header &
 	// query parameter mutations. If the side stream response is invalid, it will send a local reply
 	// to the downstream request with status HTTP 500 Internal Server Error.
 	//
-	// .. note::
+	// Note that headers_to_remove & query_parameters_to_remove are validated, but invalid elements in
+	// those fields should not affect any headers & thus will not cause the filter to send a local
+	// reply.
 	//
-	//	Both ``headers_to_remove`` and ``query_parameters_to_remove`` are validated, but invalid elements in
-	//	those fields should not affect any headers and thus will not cause the filter to send a local reply.
-	//
-	// When set to “false“, any invalid mutations will be visible to the rest of Envoy and may cause
+	// When set to false, any invalid mutations will be visible to the rest of envoy and may cause
 	// unexpected behavior.
 	//
-	// If you are using ext_authz with an untrusted ext_authz server, you should set this to “true“.
+	// If you are using ext_authz with an untrusted ext_authz server, you should set this to true.
 	ValidateMutations bool `protobuf:"varint,24,opt,name=validate_mutations,json=validateMutations,proto3" json:"validate_mutations,omitempty"`
 	// Specifies a list of metadata namespaces whose values, if present, will be passed to the
 	// ext_authz service. The :ref:`filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.filter_metadata>`
 	// is passed as an opaque “protobuf::Struct“.
 	//
-	// .. note::
-	//
-	//	This field applies exclusively to the gRPC ext_authz service and has no effect on the HTTP service.
+	// Please note that this field exclusively applies to the gRPC ext_authz service and has no effect on the HTTP service.
 	//
 	// For example, if the “jwt_authn“ filter is used and :ref:`payload_in_metadata
 	// <envoy_v3_api_field_extensions.filters.http.jwt_authn.v3.JwtProvider.payload_in_metadata>` is set,
@@ -118,12 +113,10 @@ type ExtAuthz struct {
 	// ext_authz service. :ref:`typed_filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.typed_filter_metadata>`
 	// is passed as a “protobuf::Any“.
 	//
-	// .. note::
+	// Please note that this field exclusively applies to the gRPC ext_authz service and has no effect on the HTTP service.
 	//
-	//	This field applies exclusively to the gRPC ext_authz service and has no effect on the HTTP service.
-	//
-	// This works similarly to “metadata_context_namespaces“ but allows Envoy and the ext_authz server to share
-	// the protobuf message definition in order to perform safe parsing.
+	// It works in a way similar to “metadata_context_namespaces“ but allows Envoy and ext_authz server to share
+	// the protobuf message definition in order to do a safe parsing.
 	TypedMetadataContextNamespaces []string `protobuf:"bytes,16,rep,name=typed_metadata_context_namespaces,json=typedMetadataContextNamespaces,proto3" json:"typed_metadata_context_namespaces,omitempty"`
 	// Specifies a list of route metadata namespaces whose values, if present, will be passed to the
 	// ext_authz service at :ref:`route_metadata_context <envoy_v3_api_field_service.auth.v3.AttributeContext.route_metadata_context>` in
@@ -133,7 +126,7 @@ type ExtAuthz struct {
 	// Specifies a list of route metadata namespaces whose values, if present, will be passed to the
 	// ext_authz service at :ref:`route_metadata_context <envoy_v3_api_field_service.auth.v3.AttributeContext.route_metadata_context>` in
 	// :ref:`CheckRequest <envoy_v3_api_field_service.auth.v3.CheckRequest.attributes>`.
-	// :ref:`typed_filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.typed_filter_metadata>` is passed as a “protobuf::Any“.
+	// :ref:`typed_filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.typed_filter_metadata>` is passed as an “protobuf::Any“.
 	RouteTypedMetadataContextNamespaces []string `protobuf:"bytes,22,rep,name=route_typed_metadata_context_namespaces,json=routeTypedMetadataContextNamespaces,proto3" json:"route_typed_metadata_context_namespaces,omitempty"`
 	// Specifies if the filter is enabled.
 	//
@@ -145,11 +138,11 @@ type ExtAuthz struct {
 	// Specifies if the filter is enabled with metadata matcher.
 	// If this field is not specified, the filter will be enabled for all requests.
 	FilterEnabledMetadata *v32.MetadataMatcher `protobuf:"bytes,14,opt,name=filter_enabled_metadata,json=filterEnabledMetadata,proto3" json:"filter_enabled_metadata,omitempty"`
-	// Specifies whether to deny the requests when the filter is disabled.
+	// Specifies whether to deny the requests, when the filter is disabled.
 	// If :ref:`runtime_key <envoy_v3_api_field_config.core.v3.RuntimeFeatureFlag.runtime_key>` is specified,
-	// Envoy will lookup the runtime key to determine whether to deny requests for filter-protected paths
-	// when the filter is disabled. If the filter is disabled in “typed_per_filter_config“ for the path,
-	// requests will not be denied.
+	// Envoy will lookup the runtime key to determine whether to deny request for
+	// filter protected path at filter disabling. If filter is disabled in
+	// typed_per_filter_config for the path, requests will not be denied.
 	//
 	// If this field is not specified, all requests will be allowed when disabled.
 	//
@@ -159,10 +152,10 @@ type ExtAuthz struct {
 	DenyAtDisable *v3.RuntimeFeatureFlag `protobuf:"bytes,11,opt,name=deny_at_disable,json=denyAtDisable,proto3" json:"deny_at_disable,omitempty"`
 	// Specifies if the peer certificate is sent to the external service.
 	//
-	// When this field is “true“, Envoy will include the peer X.509 certificate, if available, in the
+	// When this field is true, Envoy will include the peer X.509 certificate, if available, in the
 	// :ref:`certificate<envoy_v3_api_field_service.auth.v3.AttributeContext.Peer.certificate>`.
 	IncludePeerCertificate bool `protobuf:"varint,10,opt,name=include_peer_certificate,json=includePeerCertificate,proto3" json:"include_peer_certificate,omitempty"`
-	// Optional additional prefix to use when emitting statistics. This allows distinguishing
+	// Optional additional prefix to use when emitting statistics. This allows to distinguish
 	// emitted statistics between configured “ext_authz“ filters in an HTTP filter chain. For example:
 	//
 	// .. code-block:: yaml
@@ -189,54 +182,54 @@ type ExtAuthz struct {
 	//
 	// .. note::
 	//
-	//	For requests to an HTTP authorization server: in addition to the user's supplied matchers, ``Host``, ``Method``, ``Path``,
-	//	``Content-Length``, and ``Authorization`` are **additionally included** in the list.
+	//  1. For requests to an HTTP authorization server: in addition to the user's supplied matchers, “Host“, “Method“, “Path“,
+	//     “Content-Length“, and “Authorization“ are **additionally included** in the list.
 	//
 	// .. note::
 	//
-	//	For requests to an HTTP authorization server: the value of ``Content-Length`` will be set to ``0`` and the request to the
-	//	authorization server will not have a message body. However, the check request can include the buffered
-	//	client request body (controlled by :ref:`with_request_body
-	//	<envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.with_request_body>` setting);
-	//	consequently, the value of ``Content-Length`` in the authorization request reflects the size of its payload.
+	//  2. For requests to an HTTP authorization server: value of “Content-Length“ will be set to 0 and the request to the
+	//     authorization server will not have a message body. However, the check request can include the buffered
+	//     client request body (controlled by :ref:`with_request_body
+	//     <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.with_request_body>` setting),
+	//     consequently the value of *Content-Length* of the authorization request reflects the size of
+	//     its payload size.
 	//
 	// .. note::
 	//
-	//	This can be overridden by the field ``disallowed_headers`` below. That is, if a header
-	//	matches for both ``allowed_headers`` and ``disallowed_headers``, the header will NOT be sent.
+	//  3. This can be overridden by the field “disallowed_headers“ below. That is, if a header
+	//     matches for both “allowed_headers“ and “disallowed_headers“, the header will NOT be sent.
 	AllowedHeaders *v32.ListStringMatcher `protobuf:"bytes,17,opt,name=allowed_headers,json=allowedHeaders,proto3" json:"allowed_headers,omitempty"`
 	// If set, specifically disallow any header in this list to be forwarded to the external
 	// authentication server. This overrides the above “allowed_headers“ if a header matches both.
 	DisallowedHeaders *v32.ListStringMatcher `protobuf:"bytes,25,opt,name=disallowed_headers,json=disallowedHeaders,proto3" json:"disallowed_headers,omitempty"`
 	// Specifies if the TLS session level details like SNI are sent to the external service.
 	//
-	// When this field is “true“, Envoy will include the SNI name used for TLSClientHello, if available, in the
+	// When this field is true, Envoy will include the SNI name used for TLSClientHello, if available, in the
 	// :ref:`tls_session<envoy_v3_api_field_service.auth.v3.AttributeContext.tls_session>`.
 	IncludeTlsSession bool `protobuf:"varint,18,opt,name=include_tls_session,json=includeTlsSession,proto3" json:"include_tls_session,omitempty"`
 	// Whether to increment cluster statistics (e.g. cluster.<cluster_name>.upstream_rq_*) on authorization failure.
-	// Defaults to “true“.
+	// Defaults to true.
 	ChargeClusterResponseStats *wrapperspb.BoolValue `protobuf:"bytes,20,opt,name=charge_cluster_response_stats,json=chargeClusterResponseStats,proto3" json:"charge_cluster_response_stats,omitempty"`
-	// Whether to encode the raw headers (i.e., unsanitized values and unconcatenated multi-line headers)
-	// in the authorization request. Works with both HTTP and gRPC clients.
+	// Whether to encode the raw headers (i.e. unsanitized values & unconcatenated multi-line headers)
+	// in authentication request. Works with both HTTP and gRPC clients.
 	//
-	// When this is set to “true“, header values are not sanitized. Headers with the same key will also
+	// When this is set to true, header values are not sanitized. Headers with the same key will also
 	// not be combined into a single, comma-separated header.
 	// Requests to gRPC services will populate the field
 	// :ref:`header_map<envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.header_map>`.
 	// Requests to HTTP services will be constructed with the unsanitized header values and preserved
 	// multi-line headers with the same key.
 	//
-	// If this field is set to “false“, header values will be sanitized, with any non-UTF-8-compliant
-	// bytes replaced with “'!'“. Headers with the same key will have their values concatenated into a
+	// If this field is set to false, header values will be sanitized, with any non-UTF-8-compliant
+	// bytes replaced with '!'. Headers with the same key will have their values concatenated into a
 	// single comma-separated header value.
 	// Requests to gRPC services will populate the field
 	// :ref:`headers<envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.headers>`.
 	// Requests to HTTP services will have their header values sanitized and will not preserve
 	// multi-line headers with the same key.
 	//
-	// It is recommended to set this to “true“ unless you rely on the previous behavior.
-	//
-	// It is set to “false“ by default for backwards compatibility.
+	// It's recommended you set this to true unless you already rely on the old behavior. False is the
+	// default only for backwards compatibility.
 	EncodeRawHeaders bool `protobuf:"varint,23,opt,name=encode_raw_headers,json=encodeRawHeaders,proto3" json:"encode_raw_headers,omitempty"`
 	// Rules for what modifications an ext_authz server may make to the request headers before
 	// continuing decoding / forwarding upstream.
@@ -254,28 +247,28 @@ type ExtAuthz struct {
 	// correctness checks for all header / query parameter mutations (e.g. for invalid characters).
 	// This field allows the filter to reject mutations to specific headers.
 	DecoderHeaderMutationRules *v33.HeaderMutationRules `protobuf:"bytes,26,opt,name=decoder_header_mutation_rules,json=decoderHeaderMutationRules,proto3" json:"decoder_header_mutation_rules,omitempty"`
-	// Enable or disable ingestion of dynamic metadata from the ext_authz service.
+	// Enable / disable ingestion of dynamic metadata from ext_authz service.
 	//
-	// If “false“, the filter will ignore dynamic metadata injected by the ext_authz service. If the
+	// If false, the filter will ignore dynamic metadata injected by the ext_authz service. If the
 	// ext_authz service tries injecting dynamic metadata, the filter will log, increment the
 	// “ignored_dynamic_metadata“ stat, then continue handling the response.
 	//
-	// If “true“, the filter will ingest dynamic metadata entries as normal.
+	// If true, the filter will ingest dynamic metadata entries as normal.
 	//
-	// If unset, defaults to “true“.
+	// If unset, defaults to true.
 	EnableDynamicMetadataIngestion *wrapperspb.BoolValue `protobuf:"bytes,27,opt,name=enable_dynamic_metadata_ingestion,json=enableDynamicMetadataIngestion,proto3" json:"enable_dynamic_metadata_ingestion,omitempty"`
 	// Additional metadata to be added to the filter state for logging purposes. The metadata will be
 	// added to StreamInfo's filter state under the namespace corresponding to the ext_authz filter
 	// name.
 	FilterMetadata *structpb.Struct `protobuf:"bytes,28,opt,name=filter_metadata,json=filterMetadata,proto3" json:"filter_metadata,omitempty"`
-	// When set to “true“, the filter will emit per-stream stats for access logging. The filter state
+	// When set to true, the filter will emit per-stream stats for access logging. The filter state
 	// key will be the same as the filter name.
 	//
 	// If using Envoy gRPC, emits latency, bytes sent / received, upstream info, and upstream cluster
 	// info. If not using Envoy gRPC, emits only latency. Note that stats are ONLY added to filter
 	// state if a check request is actually made to an ext_authz service.
 	//
-	// If this is “false“ the filter will not emit stats, but filter_metadata will still be respected if
+	// If this is false the filter will not emit stats, but filter_metadata will still be respected if
 	// it has a value.
 	//
 	// Field “latency_us“ is exposed for CEL and logging when using gRPC or HTTP service.
@@ -543,19 +536,19 @@ type BufferSettings struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Sets the maximum size of a message body that the filter will hold in memory. Envoy will return
-	// “HTTP 413“ and will *not* initiate the authorization process when the buffer reaches the size
+	// “HTTP 413“ and will *not* initiate the authorization process when buffer reaches the number
 	// set in this field. Note that this setting will have precedence over :ref:`failure_mode_allow
 	// <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.failure_mode_allow>`.
 	MaxRequestBytes uint32 `protobuf:"varint,1,opt,name=max_request_bytes,json=maxRequestBytes,proto3" json:"max_request_bytes,omitempty"`
-	// When this field is “true“, Envoy will buffer the message until “max_request_bytes“ is reached.
+	// When this field is true, Envoy will buffer the message until “max_request_bytes“ is reached.
 	// The authorization request will be dispatched and no 413 HTTP error will be returned by the
 	// filter.
 	AllowPartialMessage bool `protobuf:"varint,2,opt,name=allow_partial_message,json=allowPartialMessage,proto3" json:"allow_partial_message,omitempty"`
-	// If “true“, the body sent to the external authorization service is set as raw bytes and populates
-	// :ref:`raw_body<envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.raw_body>`
-	// in the HTTP request attribute context. Otherwise, :ref:`body
-	// <envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.body>` will be populated
-	// with a UTF-8 string request body.
+	// If true, the body sent to the external authorization service is set with raw bytes, it sets
+	// the :ref:`raw_body<envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.raw_body>`
+	// field of HTTP request attribute context. Otherwise, :ref:`body
+	// <envoy_v3_api_field_service.auth.v3.AttributeContext.HttpRequest.body>` will be filled
+	// with UTF-8 string request body.
 	//
 	// This field only affects configurations using a :ref:`grpc_service
 	// <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.grpc_service>`. In configurations that use
@@ -623,7 +616,7 @@ func (x *BufferSettings) GetPackAsBytes() bool {
 // request. Note that in any of these events, metadata can be added, removed or overridden by the
 // filter:
 //
-// On authorization request, a list of allowed request headers may be supplied. See
+// *On authorization request*, a list of allowed request headers may be supplied. See
 // :ref:`allowed_headers
 // <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.AuthorizationRequest.allowed_headers>`
 // for details. Additional headers metadata may be added to the authorization request. See
@@ -631,7 +624,7 @@ func (x *BufferSettings) GetPackAsBytes() bool {
 // <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.AuthorizationRequest.headers_to_add>` for
 // details.
 //
-// On authorization response status “HTTP 200 OK“, the filter will allow traffic to the upstream and
+// On authorization response status HTTP 200 OK, the filter will allow traffic to the upstream and
 // additional headers metadata may be added to the original client request. See
 // :ref:`allowed_upstream_headers
 // <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.AuthorizationResponse.allowed_upstream_headers>`
@@ -725,7 +718,7 @@ type AuthorizationRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Authorization request includes the client request headers that have a corresponding match
+	// Authorization request includes the client request headers that have a correspondent match
 	// in the :ref:`list <envoy_v3_api_msg_type.matcher.v3.ListStringMatcher>`.
 	// This field has been deprecated in favor of :ref:`allowed_headers
 	// <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.allowed_headers>`.
@@ -737,16 +730,16 @@ type AuthorizationRequest struct {
 	//
 	// .. note::
 	//
-	//	By default, the ``Content-Length`` header is set to ``0`` and the request to the authorization
+	//	By default, ``Content-Length`` header is set to ``0`` and the request to the authorization
 	//	service has no message body. However, the authorization request *may* include the buffered
 	//	client request body (controlled by :ref:`with_request_body
 	//	<envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.with_request_body>`
-	//	setting); hence the value of its ``Content-Length`` reflects the size of its payload.
+	//	setting) hence the value of its ``Content-Length`` reflects the size of its payload size.
 	//
 	// Deprecated: Marked as deprecated in envoy/extensions/filters/http/ext_authz/v3/ext_authz.proto.
 	AllowedHeaders *v32.ListStringMatcher `protobuf:"bytes,1,opt,name=allowed_headers,json=allowedHeaders,proto3" json:"allowed_headers,omitempty"`
-	// Sets a list of headers that will be included in the request to the authorization service. Note that
-	// client request headers with the same key will be overridden.
+	// Sets a list of headers that will be included to the request to authorization service. Note that
+	// client request of the same key will be overridden.
 	HeadersToAdd []*v3.HeaderValue `protobuf:"bytes,2,rep,name=headers_to_add,json=headersToAdd,proto3" json:"headers_to_add,omitempty"`
 }
 
@@ -972,7 +965,7 @@ type isExtAuthzPerRoute_Override interface {
 type ExtAuthzPerRoute_Disabled struct {
 	// Disable the ext auth filter for this particular vhost or route.
 	// If disabled is specified in multiple per-filter-configs, the most specific one will be used.
-	// If the filter is disabled by default and this is set to “false“, the filter will be enabled
+	// If the filter is disabled by default and this is set to false, the filter will be enabled
 	// for this vhost or route.
 	Disabled bool `protobuf:"varint,1,opt,name=disabled,proto3,oneof"`
 }
@@ -987,7 +980,6 @@ func (*ExtAuthzPerRoute_Disabled) isExtAuthzPerRoute_Override() {}
 func (*ExtAuthzPerRoute_CheckSettings) isExtAuthzPerRoute_Override() {}
 
 // Extra settings for the check request.
-// [#next-free-field: 6]
 type CheckSettings struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1009,10 +1001,10 @@ type CheckSettings struct {
 	//	These settings are only applied to a filter configured with a
 	//	:ref:`grpc_service<envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.grpc_service>`.
 	ContextExtensions map[string]string `protobuf:"bytes,1,rep,name=context_extensions,json=contextExtensions,proto3" json:"context_extensions,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	// When set to “true“, disable the configured :ref:`with_request_body
+	// When set to true, disable the configured :ref:`with_request_body
 	// <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.with_request_body>` for a specific route.
 	//
-	// Only one of “disable_request_body_buffering“ and
+	// Please note that only one of *disable_request_body_buffering* or
 	// :ref:`with_request_body <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.CheckSettings.with_request_body>`
 	// may be specified.
 	DisableRequestBodyBuffering bool `protobuf:"varint,2,opt,name=disable_request_body_buffering,json=disableRequestBodyBuffering,proto3" json:"disable_request_body_buffering,omitempty"`
@@ -1020,20 +1012,10 @@ type CheckSettings struct {
 	// :ref:`with_request_body <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.ExtAuthz.with_request_body>`
 	// option for a specific route.
 	//
-	// Only one of “with_request_body“ and
+	// Please note that only one of “with_request_body“ or
 	// :ref:`disable_request_body_buffering <envoy_v3_api_field_extensions.filters.http.ext_authz.v3.CheckSettings.disable_request_body_buffering>`
 	// may be specified.
 	WithRequestBody *BufferSettings `protobuf:"bytes,3,opt,name=with_request_body,json=withRequestBody,proto3" json:"with_request_body,omitempty"`
-	// Override the external authorization service for this route.
-	// This allows different routes to use different external authorization service backends
-	// and service types (gRPC or HTTP). If specified, this overrides the filter-level service
-	// configuration regardless of the original service type.
-	//
-	// Types that are assignable to ServiceOverride:
-	//
-	//	*CheckSettings_GrpcService
-	//	*CheckSettings_HttpService
-	ServiceOverride isCheckSettings_ServiceOverride `protobuf_oneof:"service_override"`
 }
 
 func (x *CheckSettings) Reset() {
@@ -1088,45 +1070,6 @@ func (x *CheckSettings) GetWithRequestBody() *BufferSettings {
 	}
 	return nil
 }
-
-func (m *CheckSettings) GetServiceOverride() isCheckSettings_ServiceOverride {
-	if m != nil {
-		return m.ServiceOverride
-	}
-	return nil
-}
-
-func (x *CheckSettings) GetGrpcService() *v3.GrpcService {
-	if x, ok := x.GetServiceOverride().(*CheckSettings_GrpcService); ok {
-		return x.GrpcService
-	}
-	return nil
-}
-
-func (x *CheckSettings) GetHttpService() *HttpService {
-	if x, ok := x.GetServiceOverride().(*CheckSettings_HttpService); ok {
-		return x.HttpService
-	}
-	return nil
-}
-
-type isCheckSettings_ServiceOverride interface {
-	isCheckSettings_ServiceOverride()
-}
-
-type CheckSettings_GrpcService struct {
-	// Override with a gRPC service configuration.
-	GrpcService *v3.GrpcService `protobuf:"bytes,4,opt,name=grpc_service,json=grpcService,proto3,oneof"`
-}
-
-type CheckSettings_HttpService struct {
-	// Override with an HTTP service configuration.
-	HttpService *HttpService `protobuf:"bytes,5,opt,name=http_service,json=httpService,proto3,oneof"`
-}
-
-func (*CheckSettings_GrpcService) isCheckSettings_ServiceOverride() {}
-
-func (*CheckSettings_HttpService) isCheckSettings_ServiceOverride() {}
 
 var File_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto protoreflect.FileDescriptor
 
@@ -1418,8 +1361,8 @@ var file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_rawDesc = []
 	0x66, 0x69, 0x67, 0x2e, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x2e, 0x68, 0x74, 0x74, 0x70, 0x2e,
 	0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76, 0x32, 0x2e, 0x45, 0x78, 0x74,
 	0x41, 0x75, 0x74, 0x68, 0x7a, 0x50, 0x65, 0x72, 0x52, 0x6f, 0x75, 0x74, 0x65, 0x42, 0x0f, 0x0a,
-	0x08, 0x6f, 0x76, 0x65, 0x72, 0x72, 0x69, 0x64, 0x65, 0x12, 0x03, 0xf8, 0x42, 0x01, 0x22, 0x82,
-	0x05, 0x0a, 0x0d, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73,
+	0x08, 0x6f, 0x76, 0x65, 0x72, 0x72, 0x69, 0x64, 0x65, 0x12, 0x03, 0xf8, 0x42, 0x01, 0x22, 0xc8,
+	0x03, 0x0a, 0x0d, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73,
 	0x12, 0x87, 0x01, 0x0a, 0x12, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x5f, 0x65, 0x78, 0x74,
 	0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x50, 0x2e,
 	0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2e, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73,
@@ -1439,38 +1382,27 @@ var file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_rawDesc = []
 	0x6c, 0x74, 0x65, 0x72, 0x73, 0x2e, 0x68, 0x74, 0x74, 0x70, 0x2e, 0x65, 0x78, 0x74, 0x5f, 0x61,
 	0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76, 0x33, 0x2e, 0x42, 0x75, 0x66, 0x66, 0x65, 0x72, 0x53, 0x65,
 	0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x0f, 0x77, 0x69, 0x74, 0x68, 0x52, 0x65, 0x71, 0x75,
-	0x65, 0x73, 0x74, 0x42, 0x6f, 0x64, 0x79, 0x12, 0x46, 0x0a, 0x0c, 0x67, 0x72, 0x70, 0x63, 0x5f,
-	0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x21, 0x2e,
-	0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2e, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x2e, 0x63, 0x6f, 0x72,
-	0x65, 0x2e, 0x76, 0x33, 0x2e, 0x47, 0x72, 0x70, 0x63, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65,
-	0x48, 0x00, 0x52, 0x0b, 0x67, 0x72, 0x70, 0x63, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x12,
-	0x5c, 0x0a, 0x0c, 0x68, 0x74, 0x74, 0x70, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x18,
-	0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x37, 0x2e, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2e, 0x65, 0x78,
-	0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x73,
-	0x2e, 0x68, 0x74, 0x74, 0x70, 0x2e, 0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e,
-	0x76, 0x33, 0x2e, 0x48, 0x74, 0x74, 0x70, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x48, 0x00,
-	0x52, 0x0b, 0x68, 0x74, 0x74, 0x70, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x1a, 0x44, 0x0a,
-	0x16, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x45, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f,
-	0x6e, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c,
-	0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a,
-	0x02, 0x38, 0x01, 0x3a, 0x3a, 0x9a, 0xc5, 0x88, 0x1e, 0x35, 0x0a, 0x33, 0x65, 0x6e, 0x76, 0x6f,
-	0x79, 0x2e, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x2e, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x2e,
-	0x68, 0x74, 0x74, 0x70, 0x2e, 0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76,
-	0x32, 0x2e, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x42,
-	0x12, 0x0a, 0x10, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x5f, 0x6f, 0x76, 0x65, 0x72, 0x72,
-	0x69, 0x64, 0x65, 0x42, 0xb2, 0x01, 0xba, 0x80, 0xc8, 0xd1, 0x06, 0x02, 0x10, 0x02, 0x0a, 0x38,
-	0x69, 0x6f, 0x2e, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x2e, 0x65, 0x6e,
-	0x76, 0x6f, 0x79, 0x2e, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x66,
-	0x69, 0x6c, 0x74, 0x65, 0x72, 0x73, 0x2e, 0x68, 0x74, 0x74, 0x70, 0x2e, 0x65, 0x78, 0x74, 0x5f,
-	0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76, 0x33, 0x42, 0x0d, 0x45, 0x78, 0x74, 0x41, 0x75, 0x74,
-	0x68, 0x7a, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x5d, 0x67, 0x69, 0x74, 0x68, 0x75,
-	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x70, 0x72, 0x6f, 0x78, 0x79,
-	0x2f, 0x67, 0x6f, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x2d, 0x70, 0x6c, 0x61, 0x6e,
-	0x65, 0x2f, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2f, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f,
-	0x6e, 0x73, 0x2f, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x73, 0x2f, 0x68, 0x74, 0x74, 0x70, 0x2f,
-	0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2f, 0x76, 0x33, 0x3b, 0x65, 0x78, 0x74,
-	0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x76, 0x33, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x73, 0x74, 0x42, 0x6f, 0x64, 0x79, 0x1a, 0x44, 0x0a, 0x16, 0x43, 0x6f, 0x6e, 0x74, 0x65,
+	0x78, 0x74, 0x45, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x45, 0x6e, 0x74, 0x72,
+	0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03,
+	0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x3a, 0x3a, 0x9a,
+	0xc5, 0x88, 0x1e, 0x35, 0x0a, 0x33, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2e, 0x63, 0x6f, 0x6e, 0x66,
+	0x69, 0x67, 0x2e, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x2e, 0x68, 0x74, 0x74, 0x70, 0x2e, 0x65,
+	0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76, 0x32, 0x2e, 0x43, 0x68, 0x65, 0x63,
+	0x6b, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x42, 0xb2, 0x01, 0xba, 0x80, 0xc8, 0xd1,
+	0x06, 0x02, 0x10, 0x02, 0x0a, 0x38, 0x69, 0x6f, 0x2e, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x70, 0x72,
+	0x6f, 0x78, 0x79, 0x2e, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2e, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x73,
+	0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x73, 0x2e, 0x68, 0x74, 0x74,
+	0x70, 0x2e, 0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2e, 0x76, 0x33, 0x42, 0x0d,
+	0x45, 0x78, 0x74, 0x41, 0x75, 0x74, 0x68, 0x7a, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a,
+	0x5d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x65, 0x6e, 0x76, 0x6f,
+	0x79, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x2f, 0x67, 0x6f, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f,
+	0x6c, 0x2d, 0x70, 0x6c, 0x61, 0x6e, 0x65, 0x2f, 0x65, 0x6e, 0x76, 0x6f, 0x79, 0x2f, 0x65, 0x78,
+	0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x2f, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x73,
+	0x2f, 0x68, 0x74, 0x74, 0x70, 0x2f, 0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x2f,
+	0x76, 0x33, 0x3b, 0x65, 0x78, 0x74, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x7a, 0x76, 0x33, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1536,13 +1468,11 @@ var file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_depIdxs = []
 	6,  // 24: envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute.check_settings:type_name -> envoy.extensions.filters.http.ext_authz.v3.CheckSettings
 	7,  // 25: envoy.extensions.filters.http.ext_authz.v3.CheckSettings.context_extensions:type_name -> envoy.extensions.filters.http.ext_authz.v3.CheckSettings.ContextExtensionsEntry
 	1,  // 26: envoy.extensions.filters.http.ext_authz.v3.CheckSettings.with_request_body:type_name -> envoy.extensions.filters.http.ext_authz.v3.BufferSettings
-	8,  // 27: envoy.extensions.filters.http.ext_authz.v3.CheckSettings.grpc_service:type_name -> envoy.config.core.v3.GrpcService
-	2,  // 28: envoy.extensions.filters.http.ext_authz.v3.CheckSettings.http_service:type_name -> envoy.extensions.filters.http.ext_authz.v3.HttpService
-	29, // [29:29] is the sub-list for method output_type
-	29, // [29:29] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_init() }
@@ -1643,10 +1573,6 @@ func file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_init() {
 	file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_msgTypes[5].OneofWrappers = []interface{}{
 		(*ExtAuthzPerRoute_Disabled)(nil),
 		(*ExtAuthzPerRoute_CheckSettings)(nil),
-	}
-	file_envoy_extensions_filters_http_ext_authz_v3_ext_authz_proto_msgTypes[6].OneofWrappers = []interface{}{
-		(*CheckSettings_GrpcService)(nil),
-		(*CheckSettings_HttpService)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

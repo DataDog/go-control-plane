@@ -99,8 +99,6 @@ func (m *Config) validate(all bool) error {
 		}
 	}
 
-	// no validation rules for ServerIdBase64Encoded
-
 	if m.GetExpectedServerIdLength() > 18 {
 		err := ConfigValidationError{
 			field:  "ExpectedServerIdLength",
