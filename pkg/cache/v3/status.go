@@ -131,6 +131,10 @@ type ResponseWatch struct {
 	fullStateResponses bool
 }
 
+func (w ResponseWatch) nodeId() string {
+	return w.Request.Node.GetId()
+}
+
 func (w ResponseWatch) isDelta() bool {
 	return false
 }
@@ -171,6 +175,10 @@ type DeltaResponseWatch struct {
 
 	// Subscription stores the current client subscription state.
 	subscription Subscription
+}
+
+func (w DeltaResponseWatch) nodeId() string {
+	return w.Request.Node.GetId()
 }
 
 func (w DeltaResponseWatch) isDelta() bool {
