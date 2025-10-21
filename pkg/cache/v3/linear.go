@@ -136,10 +136,11 @@ type LinearCache struct {
 	currentWatchID uint64
 
 	// explicitWildcardResourcesPerNode stores the set of resources to return for each node's wildcard subscriptions
-	// when useExplicitWildcardResources mode is enabled (via WithExplicitWildcardResources option).
+	// when useExplicitWildcardResources mode is enabled.
 	// The outer map is keyed by node ID (string), and the inner map contains resource names (string) as a set.
-	// This allows customizing which resources are visible to each client node for wildcard requests,
-	// instead of returning all resources in the cache via the UpdateWilcardResourcesForNode() method.
+	// This allows customizing which resources are visible to each client node for wildcard requests
+	// instead of returning all resources in the cache. This mapping is set via
+	// the UpdateWilcardResourcesForNode() method.
 	explicitWildcardResourcesPerNode map[string]map[string]struct{}
 
 	// version is the current version of the cache. It is incremented each time resources are updated.

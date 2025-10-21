@@ -230,7 +230,7 @@ func getProtocolTests() []protocolTest {
 				if !ok {
 					panic("failed to cast to Delta response")
 				}
-				sub.SetReturnedResources(deltaResp.GetNextVersionMap())
+				sub.SetReturnedResources(deltaResp.GetReturnedResources())
 			},
 			createAdditionalWatch: func(t *testing.T, c *LinearCache, sub stream.Subscription, version string) any {
 				req := &DeltaRequest{
@@ -568,7 +568,7 @@ func TestLinearExplicitWildcardDeltaOnly(t *testing.T) {
 		require.NoError(t, err)
 		mustBlock(t, w2)
 
-		// Change from ["a", "b"] to ["a", "c"] - removing "b" and adding "c" simultaneously
+		// Change from ["a", "b"] to ["a", "c"]
 		setExplicitResources(t, c, node1, "a", "c")
 
 		resp2 := <-w2
