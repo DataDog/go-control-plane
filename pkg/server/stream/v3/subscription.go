@@ -21,15 +21,18 @@ type Subscription struct {
 
 	// returnedResources contains the resources acknowledged by the client and the acknowledged versions.
 	returnedResources map[string]string
+
+	clientNodeID string
 }
 
 // newSubscription initializes a subscription state.
-func newSubscription(wildcard bool, initialResourceVersions map[string]string) Subscription {
+func newSubscription(wildcard bool, initialResourceVersions map[string]string, nodeID string) Subscription {
 	state := Subscription{
 		wildcard:                wildcard,
 		allowLegacyWildcard:     wildcard,
 		subscribedResourceNames: map[string]struct{}{},
 		returnedResources:       initialResourceVersions,
+		clientNodeID:            nodeID,
 	}
 
 	if initialResourceVersions == nil {
@@ -39,8 +42,8 @@ func newSubscription(wildcard bool, initialResourceVersions map[string]string) S
 	return state
 }
 
-func NewSotwSubscription(subscribed []string) Subscription {
-	sub := newSubscription(len(subscribed) == 0, nil)
+func NewSotwSubscription(subscribed []string, nodeID string) Subscription {
+	sub := newSubscription(len(subscribed) == 0, nil, nodeID)
 	sub.SetResourceSubscription(subscribed)
 	return sub
 }
@@ -90,8 +93,8 @@ func (s *Subscription) SetResourceSubscription(subscribed []string) {
 	s.subscribedResourceNames = subscribedResources
 }
 
-func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string) Subscription {
-	sub := newSubscription(len(subscribed) == 0, initialResourceVersions)
+func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, nodeID string) Subscription {
+	sub := newSubscription(len(subscribed) == 0, initialResourceVersions, nodeID)
 	sub.UpdateResourceSubscriptions(subscribed, unsubscribed)
 	return sub
 }
@@ -167,6 +170,10 @@ func (s Subscription) IsWildcard() bool {
 // and their version
 func (s Subscription) ReturnedResources() map[string]string {
 	return s.returnedResources
+}
+
+func (s Subscription) ClientNodeID() string {
+	return s.clientNodeID
 }
 
 // SetReturnedResources sets a list of resource versions currently known by the client
