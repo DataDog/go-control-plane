@@ -135,6 +135,9 @@ type LinearCache struct {
 	// currentWatchID is used to index new watches.
 	currentWatchID uint64
 
+	// only set and used if useExplicitWildcardResources is enabled for the cache
+	explicitWildcardResourcesPerNode map[string]map[string]struct{}
+
 	// version is the current version of the cache. It is incremented each time resources are updated.
 	version uint64
 	// versionPrefix is used to modify the version returned to clients, and can be used to uniquely identify
@@ -146,6 +149,8 @@ type LinearCache struct {
 	// is a hash of the returned versions to allow watch resumptions when reconnecting to the cache with a
 	// new subscription.
 	useResourceVersionsInSotw bool
+
+	useExplicitWildcardResources bool
 
 	watchCount int
 
@@ -197,6 +202,16 @@ func WithSotwResourceVersions() LinearCacheOption {
 	}
 }
 
+// WithCustomWildcardMode informs the cache to reply to wildcard requests based on the
+// list of resources explicitly set by the user instead of the default behavior of all resources
+// The list of resouces are set with the method 'UpdateWilcardResourcesForNode'.
+func WithExplicitWildcardResources() LinearCacheOption {
+	return func(cache *LinearCache) {
+		cache.useExplicitWildcardResources = true
+		cache.explicitWildcardResourcesPerNode = make(map[string]map[string]struct{})
+	}
+}
+
 // NewLinearCache creates a new cache. See the comments on the struct definition.
 func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	out := &LinearCache{
@@ -218,6 +233,42 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	return out
 }
 
+func computeResourceChangeForWildcardSubscription(
+	resources map[string]*cachedResource,
+	knownVersions map[string]string,
+	changedResources,
+	removedResources []string,
+	useResourceVersion bool,
+) ([]string, []string, error) {
+	for resourceName, resource := range resources {
+		knownVersion, ok := knownVersions[resourceName]
+		if !ok {
+			// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
+			changedResources = append(changedResources, resourceName)
+		} else {
+			resourceVersion, err := resource.getVersion(useResourceVersion)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
+			}
+			if knownVersion != resourceVersion {
+				// The client knows an outdated version.
+				changedResources = append(changedResources, resourceName)
+			}
+		}
+	}
+
+	// Negative check to identify resources that have been removed in the cache.
+	// Sotw does not support returning "deletions", but in the case of full state resources
+	// a response must then be returned.
+	for resourceName := range knownVersions {
+		if _, ok := resources[resourceName]; !ok {
+			removedResources = append(removedResources, resourceName)
+		}
+	}
+
+	return changedResources, removedResources, nil
+}
+
 // computeResourceChange compares the subscription known resources and the cache current state to compute the list of resources
 // which have changed and should be notified to the user.
 //
@@ -230,30 +281,29 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 
 	knownVersions := sub.ReturnedResources()
 	if sub.IsWildcard() {
-		for resourceName, resource := range cache.resources {
-			knownVersion, ok := knownVersions[resourceName]
-			if !ok {
-				// This resource is not yet known by the client (new resource added in the cache or newly subscribed).
-				changedResources = append(changedResources, resourceName)
-			} else {
-				resourceVersion, err := resource.getVersion(useResourceVersion)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
-				}
-				if knownVersion != resourceVersion {
-					// The client knows an outdated version.
-					changedResources = append(changedResources, resourceName)
+		var resources map[string]*cachedResource
+		if cache.useExplicitWildcardResources {
+			// only includes resources that have been explicitly set for this node, that also
+			// exist in our cache
+			resources = make(map[string]*cachedResource)
+			for resourceName := range cache.explicitWildcardResourcesPerNode[sub.ClientNodeID()] {
+				if resource, ok := cache.resources[resourceName]; ok {
+					resources[resourceName] = resource
 				}
 			}
+		} else {
+			resources = cache.resources
 		}
 
-		// Negative check to identify resources that have been removed in the cache.
-		// Sotw does not support returning "deletions", but in the case of full state resources
-		// a response must then be returned.
-		for resourceName := range knownVersions {
-			if _, ok := cache.resources[resourceName]; !ok {
-				removedResources = append(removedResources, resourceName)
-			}
+		var err error
+		changedResources, removedResources, err = computeResourceChangeForWildcardSubscription(
+			resources, knownVersions, changedResources, removedResources, useResourceVersion)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to compute resource changes for wildcard subscription(explicit wildcard mode is %t): %w",
+				cache.useExplicitWildcardResources,
+				err,
+			)
 		}
 	} else {
 		for resourceName := range sub.SubscribedResources() {
@@ -327,10 +377,20 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 		// changedResources is already filtered based on the subscription.
 		resourcesToReturn = changedResources
 	case sub.IsWildcard():
-		// Include all resources for the type.
 		resourcesToReturn = make([]string, 0, len(cache.resources))
-		for resourceName := range cache.resources {
-			resourcesToReturn = append(resourcesToReturn, resourceName)
+
+		if cache.useExplicitWildcardResources {
+			// Only return wildcard resources set for this node, that are also present in the cache.
+			for resourceName := range cache.explicitWildcardResourcesPerNode[sub.ClientNodeID()] {
+				if _, ok := cache.resources[resourceName]; ok {
+					resourcesToReturn = append(resourcesToReturn, resourceName)
+				}
+			}
+		} else {
+			// Include all resources for the type.
+			for resourceName := range cache.resources {
+				resourcesToReturn = append(resourcesToReturn, resourceName)
+			}
 		}
 	default:
 		// Include all resources matching the subscription, with no concern on whether it has been updated or not.
@@ -418,6 +478,28 @@ func (cache *LinearCache) notifyAll(modified []string) error {
 	return nil
 }
 
+func (cache *LinearCache) notifyNode(nodeID string) error {
+	for watchID, watch := range cache.wildcardWatches {
+		if watch.getSubscription().ClientNodeID() != nodeID {
+			continue
+		}
+
+		response, err := cache.computeResponse(watch, false)
+		if err != nil {
+			return err
+		}
+
+		if response != nil {
+			watch.sendResponse(response)
+			cache.removeWildcardWatch(watchID)
+		} else {
+			cache.log.Infof("[Linear cache] Wildcard watch %d detected as triggered but no change was found", watchID)
+		}
+	}
+
+	return nil
+}
+
 // UpdateResource updates a resource in the collection.
 func (cache *LinearCache) UpdateResource(name string, res types.Resource) error {
 	if res == nil {
@@ -430,6 +512,28 @@ func (cache *LinearCache) UpdateResource(name string, res types.Resource) error 
 	cache.resources[name] = newCachedResource(name, res, cache.getVersion())
 
 	return cache.notifyAll([]string{name})
+}
+
+// UpdateWilcardResourcesForNode updates the list of resources
+// returned for a given client node id when using wildcard subscriptions.
+// To use this method the 'WithExplicitWildcardResources' option must be set
+// on the cache.
+func (cache *LinearCache) UpdateWilcardResourcesForNode(
+	nodeID string,
+	resourceNames map[string]struct{},
+) error {
+	if !cache.useExplicitWildcardResources {
+		return errors.New(
+			"in order to use 'UpdateWilcardResourcesForNode', the 'WithExplicitWildcardResources' option must be set")
+	}
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.version++
+	cache.explicitWildcardResourcesPerNode[nodeID] = resourceNames
+
+	return cache.notifyNode(nodeID)
 }
 
 // DeleteResource removes a resource in the collection.

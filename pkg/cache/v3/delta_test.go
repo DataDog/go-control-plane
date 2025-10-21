@@ -39,10 +39,11 @@ func TestSnapshotCacheDeltaWatch(t *testing.T) {
 	// Make our initial request as a wildcard to get all resources and make sure the wildcard requesting works as intended
 	for _, typ := range testTypes {
 		watches[typ] = make(chan cache.DeltaResponse, 1)
-		subscriptions[typ] = stream.NewDeltaSubscription(nil, nil, nil)
+		nodeID := "node"
+		subscriptions[typ] = stream.NewDeltaSubscription(nil, nil, nil, nodeID)
 		_, err := c.CreateDeltaWatch(&discovery.DeltaDiscoveryRequest{
 			Node: &core.Node{
-				Id: "node",
+				Id: nodeID,
 			},
 			TypeUrl: typ,
 		}, subscriptions[typ], watches[typ])
@@ -120,13 +121,14 @@ func TestDeltaRemoveResources(t *testing.T) {
 
 	for _, typ := range testTypes {
 		watches[typ] = make(chan cache.DeltaResponse, 1)
-		sub := stream.NewDeltaSubscription(nil, nil, nil)
+		nodeID := "node"
+		sub := stream.NewDeltaSubscription(nil, nil, nil, nodeID)
 		subscriptions[typ] = &sub
 		// We don't specify any resource name subscriptions here because we want to make sure we test wildcard
 		// functionality. This means we should receive all resources back without requesting a subscription by name.
 		_, err := c.CreateDeltaWatch(&discovery.DeltaDiscoveryRequest{
 			Node: &core.Node{
-				Id: "node",
+				Id: nodeID,
 			},
 			TypeUrl: typ,
 		}, *subscriptions[typ], watches[typ])
@@ -210,7 +212,7 @@ func TestConcurrentSetDeltaWatch(t *testing.T) {
 						},
 						TypeUrl:                rsrc.EndpointType,
 						ResourceNamesSubscribe: []string{clusterName},
-					}, stream.NewDeltaSubscription([]string{clusterName}, nil, nil), responses)
+					}, stream.NewDeltaSubscription([]string{clusterName}, nil, nil, id), responses)
 
 					require.NoError(t, err)
 					defer cancel()
@@ -227,7 +229,7 @@ func TestSnapshotDeltaCacheWatchTimeout(t *testing.T) {
 
 	// Create a non-buffered channel that will block sends.
 	watchCh := make(chan cache.DeltaResponse)
-	sub := stream.NewDeltaSubscription(names[rsrc.EndpointType], nil, nil)
+	sub := stream.NewDeltaSubscription(names[rsrc.EndpointType], nil, nil, key)
 	_, err := c.CreateDeltaWatch(&discovery.DeltaDiscoveryRequest{
 		Node: &core.Node{
 			Id: key,
@@ -277,7 +279,7 @@ func TestSnapshotCacheDeltaWatchCancel(t *testing.T) {
 			},
 			TypeUrl:                typ,
 			ResourceNamesSubscribe: names[typ],
-		}, stream.NewDeltaSubscription(names[typ], nil, nil), responses)
+		}, stream.NewDeltaSubscription(names[typ], nil, nil, key), responses)
 		require.NoError(t, err)
 
 		// Cancel the watch

@@ -1,3 +1,4 @@
+//nolint:revive // types is an established package name in this codebase
 package types
 
 import (

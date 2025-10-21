@@ -8,7 +8,7 @@ import (
 
 func TestSotwSubscriptions(t *testing.T) {
 	t.Run("legacy mode properly handled", func(t *testing.T) {
-		sub := NewSotwSubscription([]string{})
+		sub := NewSotwSubscription([]string{}, "")
 		assert.True(t, sub.IsWildcard())
 
 		// Requests always set empty in legacy mode
@@ -35,7 +35,7 @@ func TestSotwSubscriptions(t *testing.T) {
 
 	t.Run("new wildcard mode from start", func(t *testing.T) {
 		// A resource is provided so the subscription was created in wildcard
-		sub := NewSotwSubscription([]string{"*"})
+		sub := NewSotwSubscription([]string{"*"}, "")
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
@@ -73,7 +73,7 @@ func TestSotwSubscriptions(t *testing.T) {
 
 func TestDeltaSubscriptions(t *testing.T) {
 	t.Run("legacy mode properly handled", func(t *testing.T) {
-		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"})
+		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"}, "")
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
@@ -102,7 +102,7 @@ func TestDeltaSubscriptions(t *testing.T) {
 
 	t.Run("new wildcard mode", func(t *testing.T) {
 		// A resource is provided so the subscription was created in wildcard
-		sub := NewDeltaSubscription([]string{"*"}, []string{}, map[string]string{"resource": "version"})
+		sub := NewDeltaSubscription([]string{"*"}, []string{}, map[string]string{"resource": "version"}, "")
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 

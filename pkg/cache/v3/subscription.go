@@ -7,6 +7,7 @@ type watchSubscription struct {
 	returnedResources   map[string]string
 	subscribedResources map[string]struct{}
 	isWildcard          bool
+	clientNodeID        string
 }
 
 func (s watchSubscription) ReturnedResources() map[string]string {
@@ -21,9 +22,14 @@ func (s watchSubscription) IsWildcard() bool {
 	return s.isWildcard
 }
 
+func (s watchSubscription) ClientNodeID() string {
+	return s.clientNodeID
+}
+
 func newWatchSubscription(s Subscription) watchSubscription {
 	clone := watchSubscription{
 		isWildcard:          s.IsWildcard(),
+		clientNodeID:        s.ClientNodeID(),
 		returnedResources:   make(map[string]string, len(s.ReturnedResources())),
 		subscribedResources: make(map[string]struct{}, len(s.SubscribedResources())),
 	}
