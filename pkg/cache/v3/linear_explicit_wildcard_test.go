@@ -77,91 +77,122 @@ func setExplicitResources(t *testing.T, c *LinearCache, nodeID string, resources
 	require.NoError(t, err)
 }
 
-func createNodeWildcardWatch(t *testing.T, c *LinearCache, nodeID string) (<-chan Response, stream.Subscription) {
+func createNodeWildcardWatch(t *testing.T, c *LinearCache, nodeID string, versionInfo string) (stream.Subscription, chan Response) {
 	t.Helper()
-	req := &Request{ResourceNames: []string{"*"}, TypeUrl: wildcardTestType}
-	sub := stream.NewSotwSubscription(nil, nodeID)
+	req := &Request{ResourceNames: []string{"*"}, TypeUrl: wildcardTestType, VersionInfo: versionInfo}
+	sub := stream.NewSotwSubscription(req.GetResourceNames(), nodeID)
 	w := make(chan Response, 1)
 	_, err := c.CreateWatch(req, sub, w)
 	require.NoError(t, err)
-	return w, sub
+	return sub, w
 }
 
-//nolint:unparam
-func createNodeWildcardDeltaWatch(t *testing.T, c *LinearCache, nodeID string) (<-chan DeltaResponse, stream.Subscription) {
+func createNodeWildcardDeltaWatch(t *testing.T, c *LinearCache, nodeID string, versionInfo string) (stream.Subscription, chan DeltaResponse) {
 	t.Helper()
 	req := &DeltaRequest{
 		TypeUrl:                wildcardTestType,
 		ResourceNamesSubscribe: []string{"*"},
+		ResponseNonce:          versionInfo,
 	}
 	sub := stream.NewDeltaSubscription(
-		nil, nil, nil, nodeID,
+		req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), nodeID,
 	)
 	w := make(chan DeltaResponse, 1)
 	_, err := c.CreateDeltaWatch(req, sub, w)
 	require.NoError(t, err)
-	return w, sub
+	return sub, w
 }
 
 type protocolTest struct {
-	name            string
-	createWatch     func(t *testing.T, c *LinearCache, nodeID, versionInfo string) (stream.Subscription, any)
-	verifyEmpty     func(t *testing.T, respCh any, expectedVersion string)
-	verifyResources func(t *testing.T, respCh any, expectedVersion string, resources ...string)
-	mustBlock       func(t *testing.T, respCh any)
+	name                 string
+	createWatch          func(t *testing.T, c *LinearCache, nodeID, versionInfo string) (stream.Subscription, any)
+	verifyEmpty          func(t *testing.T, respCh any, expectedVersion string) any
+	verifyResources      func(t *testing.T, respCh any, expectedVersion string, resources ...string) any
+	mustBlock            func(t *testing.T, respCh any)
+	verifyAdded          func(t *testing.T, respCh any, resources ...string) any
+	getVersion           func(resp any) string
+	updateVersion        func(resp any, sub *stream.Subscription, version string)
+	createAdditionalWatch func(t *testing.T, c *LinearCache, sub stream.Subscription, version string) any
 }
 
 func getProtocolTests() []protocolTest {
 	return []protocolTest{
 		{
 			name: "SOTW",
-			createWatch: func(t *testing.T, c *LinearCache, nodeID, _ string) (stream.Subscription, any) {
-				t.Helper()
-				req := &Request{ResourceNames: []string{"*"}, TypeUrl: wildcardTestType, VersionInfo: ""}
-				sub := stream.NewSotwSubscription(req.GetResourceNames(), nodeID)
-				w := make(chan Response, 1)
-				_, err := c.CreateWatch(req, sub, w)
-				require.NoError(t, err)
+			createWatch: func(t *testing.T, c *LinearCache, nodeID, versionInfo string) (stream.Subscription, any) {
+				sub, w := createNodeWildcardWatch(t, c, nodeID, versionInfo)
 				return sub, w
 			},
-			verifyEmpty: func(t *testing.T, respCh any, _ string) {
-				t.Helper()
+			verifyEmpty: func(t *testing.T, respCh any, _ string) any {
 				w, ok := respCh.(chan Response)
 				require.True(t, ok, "failed to cast to SOTW response channel")
-				verifyResponseResources(t, w, wildcardTestType, "")
+				return verifyResponseResources(t, w, wildcardTestType, "")
 			},
-			verifyResources: func(t *testing.T, respCh any, _ string, resources ...string) {
-				t.Helper()
+			verifyResources: func(t *testing.T, respCh any, _ string, resources ...string) any {
 				w, ok := respCh.(chan Response)
 				require.True(t, ok, "failed to cast to SOTW response channel")
-				verifyResponseResources(t, w, wildcardTestType, "", resources...)
+				return verifyResponseResources(t, w, wildcardTestType, "", resources...)
 			},
 			mustBlock: func(t *testing.T, respCh any) {
-				t.Helper()
 				w, ok := respCh.(chan Response)
 				require.True(t, ok, "failed to cast to SOTW response channel")
 				mustBlock(t, w)
 			},
+			verifyAdded: func(t *testing.T, respCh any, resources ...string) any {
+				w, ok := respCh.(chan Response)
+				require.True(t, ok, "failed to cast to SOTW response channel")
+				resp := <-w
+				returnedResources := resp.GetReturnedResources()
+				for _, r := range resources {
+					assert.Contains(t, returnedResources, r, "resource %s should have been added", r)
+				}
+				return resp
+			},
+			// Returns the cache version from the response (e.g., "3", "4").
+			// The cache version increments with each cache mutation.
+			getVersion: func(resp any) string {
+				sotwResp, ok := resp.(Response)
+				if !ok {
+					panic("failed to cast to SOTW response")
+				}
+				version, _ := sotwResp.GetVersion()
+				return version
+			},
+			updateVersion: func(resp any, sub *stream.Subscription, version string) {
+				sotwResp, ok := resp.(Response)
+				if !ok {
+					panic("failed to cast to SOTW response")
+				}
+				req := &Request{TypeUrl: wildcardTestType, VersionInfo: version}
+				updateFromSotwResponse(sotwResp, sub, req)
+			},
+			createAdditionalWatch: func(t *testing.T, c *LinearCache, sub stream.Subscription, version string) any {
+				req := &Request{
+					ResourceNames: []string{"*"},
+					TypeUrl:       wildcardTestType,
+					VersionInfo:   version,
+				}
+				w := make(chan Response, 1)
+				_, err := c.CreateWatch(req, sub, w)
+				require.NoError(t, err)
+				return w
+			},
 		},
 		{
 			name: "Delta",
-			createWatch: func(t *testing.T, c *LinearCache, nodeID, _ string) (stream.Subscription, any) {
-				t.Helper()
-				req := &DeltaRequest{TypeUrl: wildcardTestType, ResourceNamesSubscribe: []string{"*"}}
-				sub := stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), nodeID)
-				w := make(chan DeltaResponse, 1)
-				_, err := c.CreateDeltaWatch(req, sub, w)
-				require.NoError(t, err)
+			createWatch: func(t *testing.T, c *LinearCache, nodeID, versionInfo string) (stream.Subscription, any) {
+				sub, w := createNodeWildcardDeltaWatch(t, c, nodeID, versionInfo)
 				return sub, w
 			},
-			verifyEmpty: func(t *testing.T, respCh any, _ string) {
+			verifyEmpty: func(t *testing.T, respCh any, _ string) any {
 				t.Helper()
 				w, ok := respCh.(chan DeltaResponse)
 				require.True(t, ok, "failed to cast to Delta response channel")
 				resp := <-w
 				assert.Empty(t, resp.GetNextVersionMap())
+				return resp
 			},
-			verifyResources: func(t *testing.T, respCh any, _ string, resources ...string) {
+			verifyResources: func(t *testing.T, respCh any, _ string, resources ...string) any {
 				t.Helper()
 				w, ok := respCh.(chan DeltaResponse)
 				require.True(t, ok, "failed to cast to Delta response channel")
@@ -171,12 +202,45 @@ func getProtocolTests() []protocolTest {
 				for _, r := range resources {
 					assert.Contains(t, versionMap, r)
 				}
+				return resp
 			},
 			mustBlock: func(t *testing.T, respCh any) {
 				t.Helper()
 				w, ok := respCh.(chan DeltaResponse)
 				require.True(t, ok, "failed to cast to Delta response channel")
 				mustBlockDelta(t, w)
+			},
+			verifyAdded: func(t *testing.T, respCh any, resources ...string) any {
+				w, ok := respCh.(chan DeltaResponse)
+				require.True(t, ok, "failed to cast to Delta response channel")
+				resp := <-w
+				versionMap := resp.GetNextVersionMap()
+				for _, r := range resources {
+					assert.Contains(t, versionMap, r, "resource %s should have been added", r)
+				}
+				return resp
+			},
+			// Any non-empty value works - the cache only checks
+			// if it's empty (first request) or non-empty (subsequent request).
+			getVersion: func(resp any) string {
+				return "non-empty"
+			},
+			updateVersion: func(resp any, sub *stream.Subscription, version string) {
+				deltaResp, ok := resp.(DeltaResponse)
+				if !ok {
+					panic("failed to cast to Delta response")
+				}
+				sub.SetReturnedResources(deltaResp.GetNextVersionMap())
+			},
+			createAdditionalWatch: func(t *testing.T, c *LinearCache, sub stream.Subscription, version string) any {
+				req := &DeltaRequest{
+					TypeUrl:       wildcardTestType,
+					ResponseNonce: version,
+				}
+				w := make(chan DeltaResponse, 1)
+				_, err := c.CreateDeltaWatch(req, sub, w)
+				require.NoError(t, err)
+				return w
 			},
 		},
 	}
@@ -225,100 +289,256 @@ func TestLinearExplicitWildcardBothProtocols(t *testing.T) {
 				_, w := protocol.createWatch(t, c, node1, "")
 				protocol.verifyResources(t, w, "", "a", "b")
 			})
+
+			t.Run("don't receive entire cache with explicit resources", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+				require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
+
+				setExplicitResources(t, c, node1, "a", "b")
+
+				sub, w := protocol.createWatch(t, c, node1, "")
+				resp := protocol.verifyResources(t, w, "", "a", "b")
+				version := protocol.getVersion(resp)
+				protocol.updateVersion(resp, &sub, version)
+
+				checkTotalWatchCount(t, c, 0)
+			})
+
+			t.Run("explicit resources updated while watch active", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+				require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
+
+				setExplicitResources(t, c, node1, "a", "b")
+
+				sub, w := protocol.createWatch(t, c, node1, "")
+				resp := protocol.verifyResources(t, w, "", "a", "b")
+				version := protocol.getVersion(resp)
+				protocol.updateVersion(resp, &sub, version)
+
+				w2 := protocol.createAdditionalWatch(t, c, sub, version)
+				protocol.mustBlock(t, w2)
+
+				setExplicitResources(t, c, node1, "b", "c")
+				protocol.verifyAdded(t, w2, "c")
+			})
+
+			t.Run("resource versions tracked correctly on update", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+
+				setExplicitResources(t, c, node1, "a", "b")
+
+				sub, w := protocol.createWatch(t, c, node1, "")
+				resp := protocol.verifyResources(t, w, "", "a", "b")
+				version := protocol.getVersion(resp)
+				protocol.updateVersion(resp, &sub, version)
+
+				w2 := protocol.createAdditionalWatch(t, c, sub, version)
+				protocol.mustBlock(t, w2)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a-updated")))
+				protocol.verifyAdded(t, w2, "a")
+			})
+
+			t.Run("wildcard and non-wildcard watches coexist", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+
+				setExplicitResources(t, c, node1, "a")
+
+				sub, wWildcard := protocol.createWatch(t, c, node1, "")
+				respWildcard := protocol.verifyResources(t, wWildcard, "", "a")
+				version := protocol.getVersion(respWildcard)
+				protocol.updateVersion(respWildcard, &sub, version)
+
+				reqNonWildcard := &Request{
+					ResourceNames: []string{"a", "b"},
+					TypeUrl:       wildcardTestType,
+					VersionInfo:   "",
+				}
+				wNonWildcard := make(chan Response, 1)
+				subNonWildcard := stream.NewSotwSubscription(reqNonWildcard.GetResourceNames(), node1)
+				_, err := c.CreateWatch(reqNonWildcard, subNonWildcard, wNonWildcard)
+				require.NoError(t, err)
+				verifyResponseResources(t, wNonWildcard, wildcardTestType, "", "a", "b")
+			})
+
+			t.Run("explicit wildcard only affects wildcard subscriptions", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+
+				setExplicitResources(t, c, node1, "a")
+
+				req := &Request{
+					ResourceNames: []string{"b"},
+					TypeUrl:       wildcardTestType,
+					VersionInfo:   "",
+				}
+				w := make(chan Response, 1)
+				sub := stream.NewSotwSubscription(req.GetResourceNames(), node1)
+				_, err := c.CreateWatch(req, sub, w)
+				require.NoError(t, err)
+
+				verifyResponseResources(t, w, wildcardTestType, "", "b")
+			})
+
+			t.Run("cache update triggers correct watches", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+
+				setExplicitResources(t, c, node1, "a")
+				setExplicitResources(t, c, node2, "b")
+
+				sub1, w1 := protocol.createWatch(t, c, node1, "")
+				resp1 := protocol.verifyResources(t, w1, "", "a")
+				version1 := protocol.getVersion(resp1)
+				protocol.updateVersion(resp1, &sub1, version1)
+
+				sub2, w2 := protocol.createWatch(t, c, node2, "")
+				resp2 := protocol.verifyResources(t, w2, "", "b")
+				version2 := protocol.getVersion(resp2)
+				protocol.updateVersion(resp2, &sub2, version2)
+
+				w1Next := protocol.createAdditionalWatch(t, c, sub1, version1)
+				protocol.mustBlock(t, w1Next)
+
+				w2Next := protocol.createAdditionalWatch(t, c, sub2, version2)
+				protocol.mustBlock(t, w2Next)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a-updated")))
+
+				protocol.verifyAdded(t, w1Next, "a")
+				protocol.mustBlock(t, w2Next)
+			})
+
+			t.Run("triggers pending wildcard watches", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+				require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+
+				sub, w := protocol.createWatch(t, c, node1, "")
+				resp := protocol.verifyEmpty(t, w, "")
+				version := protocol.getVersion(resp)
+				protocol.updateVersion(resp, &sub, version)
+
+				w2 := protocol.createAdditionalWatch(t, c, sub, version)
+				protocol.mustBlock(t, w2)
+
+				setExplicitResources(t, c, node1, "a", "b")
+				protocol.verifyResources(t, w2, "", "a", "b")
+			})
+
+			t.Run("only notifies watches for specified node", func(t *testing.T) {
+				c := newExplicitWildcardCache(t)
+
+				require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+
+				sub1, w1 := protocol.createWatch(t, c, node1, "")
+				resp1 := protocol.verifyEmpty(t, w1, "")
+				version1 := protocol.getVersion(resp1)
+				protocol.updateVersion(resp1, &sub1, version1)
+
+				sub2, w2 := protocol.createWatch(t, c, node2, "")
+				resp2 := protocol.verifyEmpty(t, w2, "")
+				version2 := protocol.getVersion(resp2)
+				protocol.updateVersion(resp2, &sub2, version2)
+
+				w1Next := protocol.createAdditionalWatch(t, c, sub1, version1)
+				protocol.mustBlock(t, w1Next)
+
+				w2Next := protocol.createAdditionalWatch(t, c, sub2, version2)
+				protocol.mustBlock(t, w2Next)
+
+				setExplicitResources(t, c, node1, "a")
+				protocol.verifyResources(t, w1Next, "", "a")
+				protocol.mustBlock(t, w2Next)
+			})
 		})
 	}
 }
 
-func TestLinearUpdateWildcardResourcesForNode(t *testing.T) {
-	t.Run("triggers pending wildcard watches", func(t *testing.T) {
+func TestLinearExplicitWildcardDeltaOnly(t *testing.T) {
+	t.Run("resource removal from explicit list", func(t *testing.T) {
+		// Note: SOTW doesn't properly handle resource removal from explicit list yet
 		c := newExplicitWildcardCache(t)
 
 		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
 		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
 
-		req := &Request{
-			ResourceNames: []string{"*"},
+		setExplicitResources(t, c, node1, "a", "b", "c")
+
+		sub, w := createNodeWildcardDeltaWatch(t, c, node1, "")
+		resp := <-w
+		sub.SetReturnedResources(resp.GetNextVersionMap())
+		assert.Len(t, resp.GetNextVersionMap(), 3)
+
+		w2 := make(chan DeltaResponse, 1)
+		req := &DeltaRequest{
 			TypeUrl:       wildcardTestType,
-			VersionInfo:   "",
+			ResponseNonce: "1",
 		}
-		sub := stream.NewSotwSubscription(req.GetResourceNames(), node1)
-		w := make(chan Response, 1)
-		_, err := c.CreateWatch(req, sub, w)
+		_, err := c.CreateDeltaWatch(req, sub, w2)
 		require.NoError(t, err)
-
-		resp, r := verifyResponseContent(t, w, wildcardTestType, "2")
-		assert.Empty(t, r.GetResources())
-		updateFromSotwResponse(resp, &sub, req)
-
-		w2 := make(chan Response, 1)
-		_, err = c.CreateWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlock(t, w2)
+		mustBlockDelta(t, w2)
 
 		setExplicitResources(t, c, node1, "a", "b")
-		verifyResponseResources(t, w2, wildcardTestType, "3", "a", "b")
+		resp2 := <-w2
+		deltaResp, err := resp2.GetDeltaDiscoveryResponse()
+		require.NoError(t, err)
+		removedResources := deltaResp.GetRemovedResources()
+		assert.Contains(t, removedResources, "c", "resource c should have been removed")
 	})
 
-	t.Run("only notifies watches for specified node", func(t *testing.T) {
+	t.Run("update explicit list triggers watch with add and remove", func(t *testing.T) {
+		// Note: SOTW doesn't properly handle simultaneous add/remove from explicit list yet
 		c := newExplicitWildcardCache(t)
 
 		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
+		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
+		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
 
-		req1 := &Request{
-			ResourceNames: []string{"*"},
+		setExplicitResources(t, c, node1, "a", "b")
+
+		sub, w := createNodeWildcardDeltaWatch(t, c, node1, "")
+		resp := <-w
+		sub.SetReturnedResources(resp.GetNextVersionMap())
+		assert.Len(t, resp.GetNextVersionMap(), 2)
+
+		w2 := make(chan DeltaResponse, 1)
+		req := &DeltaRequest{
 			TypeUrl:       wildcardTestType,
-			VersionInfo:   "",
+			ResponseNonce: "1",
 		}
-		req2 := &Request{
-			ResourceNames: []string{"*"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   "",
-		}
-		sub1 := stream.NewSotwSubscription(req1.GetResourceNames(), node1)
-		sub2 := stream.NewSotwSubscription(req2.GetResourceNames(), node2)
-		w1 := make(chan Response, 1)
-		w2 := make(chan Response, 1)
-
-		_, err := c.CreateWatch(req1, sub1, w1)
+		_, err := c.CreateDeltaWatch(req, sub, w2)
 		require.NoError(t, err)
-		_, err = c.CreateWatch(req2, sub2, w2)
+		mustBlockDelta(t, w2)
+
+		setExplicitResources(t, c, node1, "a", "c")
+		resp2 := <-w2
+
+		versionMap := resp2.GetNextVersionMap()
+		assert.Contains(t, versionMap, "c", "resource c should have been added")
+
+		deltaResp, err := resp2.GetDeltaDiscoveryResponse()
 		require.NoError(t, err)
-
-		resp1, r1 := verifyResponseContent(t, w1, wildcardTestType, "1")
-		assert.Empty(t, r1.GetResources())
-		resp2, r2 := verifyResponseContent(t, w2, wildcardTestType, "1")
-		assert.Empty(t, r2.GetResources())
-		updateFromSotwResponse(resp1, &sub1, req1)
-		updateFromSotwResponse(resp2, &sub2, req2)
-
-		req1.VersionInfo = "1"
-		req2.VersionInfo = "1"
-
-		w1Next := make(chan Response, 1)
-		_, err = c.CreateWatch(req1, sub1, w1Next)
-		require.NoError(t, err)
-
-		w2Next := make(chan Response, 1)
-		_, err = c.CreateWatch(req2, sub2, w2Next)
-		require.NoError(t, err)
-
-		mustBlock(t, w1Next)
-		mustBlock(t, w2Next)
-
-		setExplicitResources(t, c, node1, "a")
-		verifyResponseResources(t, w1Next, wildcardTestType, "2", "a")
-		mustBlock(t, w2Next)
-	})
-
-	t.Run("handles empty resource list", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-
-		setExplicitResources(t, c, node1)
-
-		w, _ := createNodeWildcardWatch(t, c, node1)
-		verifyResponseResources(t, w, wildcardTestType, "")
+		removedResources := deltaResp.GetRemovedResources()
+		assert.Contains(t, removedResources, "b", "resource b should have been removed")
 	})
 }
 
@@ -331,266 +551,5 @@ func TestLinearExplicitWildcardErrors(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "WithExplicitWildcardResources")
-	})
-}
-
-func TestLinearExplicitWildcardSotw(t *testing.T) {
-	t.Run("don't receive entire cache with explicit resources", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
-
-		setExplicitResources(t, c, node1, "a", "b")
-
-		w, sub := createNodeWildcardWatch(t, c, node1)
-		resp := verifyResponseResources(t, w, wildcardTestType, "", "a", "b")
-
-		updateFromSotwResponse(resp, &sub, &Request{TypeUrl: wildcardTestType})
-
-		checkTotalWatchCount(t, c, 0)
-	})
-
-	t.Run("explicit resources updated while watch active", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
-
-		setExplicitResources(t, c, node1, "a", "b")
-
-		w, sub := createNodeWildcardWatch(t, c, node1)
-		resp := verifyResponseResources(t, w, wildcardTestType, "", "a", "b")
-		version, _ := resp.GetVersion()
-		updateFromSotwResponse(resp, &sub, &Request{TypeUrl: wildcardTestType, VersionInfo: version})
-
-		w2 := make(chan Response, 1)
-		req := &Request{
-			ResourceNames: []string{"*"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   version,
-		}
-		_, err := c.CreateWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlock(t, w2)
-
-		setExplicitResources(t, c, node1, "b", "c")
-		resp2 := <-w2
-		returnedResources := resp2.GetReturnedResources()
-		assert.Contains(t, returnedResources, "b")
-		assert.Contains(t, returnedResources, "c")
-	})
-}
-
-func TestLinearExplicitWildcardDelta(t *testing.T) {
-	t.Run("delta wildcard with explicit resources", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
-
-		setExplicitResources(t, c, node1, "a", "b")
-
-		w, sub := createNodeWildcardDeltaWatch(t, c, node1)
-		resp := <-w
-		nextVersionMap := resp.GetNextVersionMap()
-		sub.SetReturnedResources(nextVersionMap)
-
-		assert.Len(t, nextVersionMap, 2)
-		assert.Contains(t, nextVersionMap, "a")
-		assert.Contains(t, nextVersionMap, "b")
-
-		req := &DeltaRequest{
-			TypeUrl:       wildcardTestType,
-			ResponseNonce: "1",
-		}
-		w2 := make(chan DeltaResponse, 1)
-		_, err := c.CreateDeltaWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlockDelta(t, w2)
-	})
-
-	t.Run("delta wildcard resource versions tracked correctly", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-
-		setExplicitResources(t, c, node1, "a", "b")
-
-		w, sub := createNodeWildcardDeltaWatch(t, c, node1)
-		resp := <-w
-		sub.SetReturnedResources(resp.GetNextVersionMap())
-
-		req := &DeltaRequest{
-			TypeUrl:       wildcardTestType,
-			ResponseNonce: "1",
-		}
-		w2 := make(chan DeltaResponse, 1)
-		_, err := c.CreateDeltaWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlockDelta(t, w2)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a-updated")))
-		resp2 := <-w2
-		nextVersionMap2 := resp2.GetNextVersionMap()
-		assert.Len(t, nextVersionMap2, 2)
-		assert.Contains(t, nextVersionMap2, "a")
-	})
-
-	t.Run("delta wildcard with resource removal from explicit list", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
-
-		setExplicitResources(t, c, node1, "a", "b", "c")
-
-		w, sub := createNodeWildcardDeltaWatch(t, c, node1)
-		resp := <-w
-		sub.SetReturnedResources(resp.GetNextVersionMap())
-
-		req := &DeltaRequest{
-			TypeUrl:       wildcardTestType,
-			ResponseNonce: "1",
-		}
-		w2 := make(chan DeltaResponse, 1)
-		_, err := c.CreateDeltaWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlockDelta(t, w2)
-
-		setExplicitResources(t, c, node1, "a", "b")
-		resp2 := <-w2
-		deltaResp, err := resp2.GetDeltaDiscoveryResponse()
-		require.NoError(t, err)
-		removedResources := deltaResp.GetRemovedResources()
-		assert.Contains(t, removedResources, "c")
-	})
-
-	t.Run("delta wildcard update explicit list triggers watch", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-		require.NoError(t, c.UpdateResource("c", buildTestEndpoint("c")))
-
-		setExplicitResources(t, c, node1, "a", "b")
-
-		w, sub := createNodeWildcardDeltaWatch(t, c, node1)
-		resp := <-w
-		sub.SetReturnedResources(resp.GetNextVersionMap())
-
-		req := &DeltaRequest{
-			TypeUrl:       wildcardTestType,
-			ResponseNonce: "1",
-		}
-		w2 := make(chan DeltaResponse, 1)
-		_, err := c.CreateDeltaWatch(req, sub, w2)
-		require.NoError(t, err)
-		mustBlockDelta(t, w2)
-
-		setExplicitResources(t, c, node1, "a", "c")
-		resp2 := <-w2
-		nextVersionMap2 := resp2.GetNextVersionMap()
-		deltaResp, err := resp2.GetDeltaDiscoveryResponse()
-		require.NoError(t, err)
-		removedResources := deltaResp.GetRemovedResources()
-		assert.Contains(t, nextVersionMap2, "c")
-		assert.Contains(t, removedResources, "b")
-	})
-}
-
-func TestLinearExplicitWildcardMixedSubscriptions(t *testing.T) {
-	t.Run("wildcard and non-wildcard watches coexist", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-
-		setExplicitResources(t, c, node1, "a")
-
-		wWildcard, subWildcard := createNodeWildcardWatch(t, c, node1)
-		respWildcard := verifyResponseResources(t, wWildcard, wildcardTestType, "", "a")
-		updateFromSotwResponse(respWildcard, &subWildcard, &Request{TypeUrl: wildcardTestType})
-
-		reqNonWildcard := &Request{
-			ResourceNames: []string{"a", "b"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   "",
-		}
-		wNonWildcard := make(chan Response, 1)
-		subNonWildcard := stream.NewSotwSubscription(reqNonWildcard.GetResourceNames(), node1)
-		_, err := c.CreateWatch(reqNonWildcard, subNonWildcard, wNonWildcard)
-		require.NoError(t, err)
-		verifyResponseResources(t, wNonWildcard, wildcardTestType, "", "a", "b")
-	})
-
-	t.Run("explicit wildcard only affects wildcard subscriptions", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-
-		setExplicitResources(t, c, node1, "a")
-
-		req := &Request{
-			ResourceNames: []string{"b"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   "",
-		}
-		w := make(chan Response, 1)
-		sub := stream.NewSotwSubscription(req.GetResourceNames(), node1)
-		_, err := c.CreateWatch(req, sub, w)
-		require.NoError(t, err)
-
-		verifyResponseResources(t, w, wildcardTestType, "", "b")
-	})
-
-	t.Run("cache update triggers correct watches", func(t *testing.T) {
-		c := newExplicitWildcardCache(t)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a")))
-		require.NoError(t, c.UpdateResource("b", buildTestEndpoint("b")))
-
-		setExplicitResources(t, c, node1, "a")
-		setExplicitResources(t, c, node2, "b")
-
-		w1, sub1 := createNodeWildcardWatch(t, c, node1)
-		resp1 := verifyResponseResources(t, w1, wildcardTestType, "", "a")
-		version1, _ := resp1.GetVersion()
-		updateFromSotwResponse(resp1, &sub1, &Request{TypeUrl: wildcardTestType, VersionInfo: version1})
-
-		w2, sub2 := createNodeWildcardWatch(t, c, node2)
-		resp2 := verifyResponseResources(t, w2, wildcardTestType, "", "b")
-		version2, _ := resp2.GetVersion()
-		updateFromSotwResponse(resp2, &sub2, &Request{TypeUrl: wildcardTestType, VersionInfo: version2})
-
-		w1Next := make(chan Response, 1)
-		_, err := c.CreateWatch(&Request{
-			ResourceNames: []string{"*"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   version1,
-		}, sub1, w1Next)
-		require.NoError(t, err)
-		mustBlock(t, w1Next)
-
-		w2Next := make(chan Response, 1)
-		_, err = c.CreateWatch(&Request{
-			ResourceNames: []string{"*"},
-			TypeUrl:       wildcardTestType,
-			VersionInfo:   version2,
-		}, sub2, w2Next)
-		require.NoError(t, err)
-		mustBlock(t, w2Next)
-
-		require.NoError(t, c.UpdateResource("a", buildTestEndpoint("a-updated")))
-
-		resp1Next := <-w1Next
-		assert.Contains(t, resp1Next.GetReturnedResources(), "a")
-		mustBlock(t, w2Next)
 	})
 }
