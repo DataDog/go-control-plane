@@ -33,9 +33,21 @@ type Snapshot struct {
 	// instantiated by calling ConstructVersionMap().
 	// VersionMap is only to be used with delta xDS.
 	VersionMap map[string]map[string]string
+
+	// If the wildcardMap is nil, we should treat every resource as if it was a wildcard
+	// otherwise we will only treat the the resources specified in this map as wildcard.
+	wildcardMap map[resource.Type][]string
 }
 
 var _ ResourceSnapshot = &Snapshot{}
+
+// SnapshotResource contains a resource, and
+// a Wildcard field that indicates whether or not it should
+// returned as part of wildcard requests for this resource
+type SnapshotResource struct {
+	Resource types.ResourceWithTTL
+	Wildcard bool
+}
 
 // NewSnapshot creates a snapshot from response types and a version.
 // The resources map is keyed off the type URL of a resource, followed by the slice of resource objects.
@@ -53,6 +65,16 @@ func NewSnapshot(version string, resources map[resource.Type][]types.Resource) (
 
 	return &out, nil
 }
+
+// NewSnapshotWithExplicitWildcard creates a Snapshot, where for each resource
+// we specify if that resource should be returned as part of wildcard requests or not.
+func NewSnapshotWithExplicitWildcard(
+	version string,
+	resources map[resource.Type][]SnapshotResource,
+) (*Snapshot, error){
+	return nil, nil
+}
+
 
 // NewSnapshotWithTTLs creates a snapshot of ResourceWithTTLs.
 // The resources map is keyed off the type URL of a resource, followed by the slice of resource objects.
