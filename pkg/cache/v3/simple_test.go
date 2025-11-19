@@ -548,3 +548,43 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 
 	<-responder
 }
+
+func TestSnapshotCacheWildcardAndExplicitSubscriptions(t *testing.T) {
+	c := cache.NewSnapshotCache(false, cache.IDHash{}, log.NewTestLogger(t))
+
+	cluster1 := resource.MakeCluster(resource.Ads, "cluster1")
+	cluster2 := resource.MakeCluster(resource.Ads, "cluster2")
+	cluster3 := resource.MakeCluster(resource.Ads, "cluster3")
+
+	snapshot, err := cache.NewSnapshotWithExplicitWildcard("v1", map[rsrc.Type][]cache.SnapshotResource{
+		rsrc.ClusterType: {
+			{Resource: types.ResourceWithTTL{Resource: cluster1}, Wildcard: true},
+			{Resource: types.ResourceWithTTL{Resource: cluster2}, Wildcard: false},
+			{Resource: types.ResourceWithTTL{Resource: cluster3}, Wildcard: true},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.SetSnapshot(context.Background(), "node1", snapshot))
+
+	value := make(chan cache.DeltaResponse, 1)
+	req := &cache.DeltaRequest{
+		TypeUrl: rsrc.ClusterType,
+	}
+
+	sub := stream.NewDeltaSubscription([]string{"cluster2"}, nil, nil, false)
+
+	_, err = c.CreateDeltaWatch(req, sub, value)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-value:
+		resources := resp.GetReturnedResources()
+		assert.Len(t, resources, 3)
+		assert.Contains(t, resources, "cluster1")
+		assert.Contains(t, resources, "cluster2")
+		assert.Contains(t, resources, "cluster3")
+
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for response")
+	}
+}

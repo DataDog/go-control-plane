@@ -56,12 +56,9 @@ type ResourceSnapshot interface {
 	GetVersionMap(typeURL string) map[string]string
 
 	// GetWildcardResources returns only the resources that should be sent for wildcard requests.
-	// This is used for ODCDS (On-Demand CDS) support where some resources should only be
-	// sent when explicitly requested by name, not proactively pushed via wildcard.
 	GetWildcardResources(typeURL string) map[string]types.Resource
 
 	// GetWildcardResourcesAndTTL returns only the resources with TTL that should be sent for wildcard requests.
-	// Similar to GetWildcardResources but includes TTL information.
 	GetWildcardResourcesAndTTL(typeURL string) map[string]types.ResourceWithTTL
 }
 
@@ -156,6 +153,48 @@ func newSnapshotCache(ads bool, hash NodeHash, logger log.Logger) *snapshotCache
 	return cache
 }
 
+func getResourcesForSubscription(snapshot ResourceSnapshot, typeURL string, subscribedResources map[string]struct{}, isWildcard bool) map[string]types.Resource {
+	resourcesWithTTL := getResourcesAndTTLForSubscription(snapshot, typeURL, subscribedResources, isWildcard)
+	if resourcesWithTTL == nil {
+		return nil
+	}
+
+	withoutTTL := make(map[string]types.Resource, len(resourcesWithTTL))
+	for k, v := range resourcesWithTTL {
+		withoutTTL[k] = v.Resource
+	}
+
+	return withoutTTL
+}
+
+// Returns resources with TTL for a given subscription.
+// This is needed because Envoy can have both a wildcard subscription AND explicit subscriptions
+// to on-demand resources in the same stream.
+func getResourcesAndTTLForSubscription(snapshot ResourceSnapshot, typeURL string, subscribedResources map[string]struct{}, isWildcard bool) map[string]types.ResourceWithTTL {
+	var resources map[string]types.ResourceWithTTL
+
+	if isWildcard {
+		resources = snapshot.GetWildcardResourcesAndTTL(typeURL)
+		if resources == nil {
+			resources = make(map[string]types.ResourceWithTTL)
+		}
+	} else {
+		resources = make(map[string]types.ResourceWithTTL)
+	}
+
+	// Handle the case where a wildcard subscription also has explicit on-demand resources
+	if len(subscribedResources) > 0 {
+		allResources := snapshot.GetResourcesAndTTL(typeURL)
+		for name := range subscribedResources {
+			if resource, exists := allResources[name]; exists {
+				resources[name] = resource
+			}
+		}
+	}
+
+	return resources
+}
+
 // NewSnapshotCacheWithHeartbeating initializes a simple cache that sends periodic heartbeat
 // responses for resources with a TTL.
 //
@@ -204,13 +243,13 @@ func (cache *snapshotCache) sendHeartbeats(ctx context.Context, node string) {
 		for id, watch := range info.watches {
 			// Respond with the current version regardless of whether the version has changed.
 			version := snapshot.GetVersion(watch.Request.GetTypeUrl())
-			// For wildcard requests, only include wildcard-eligible resources (ODCDS support)
-			var resources map[string]types.ResourceWithTTL
-			if watch.subscription.IsWildcard() {
-				resources = snapshot.GetWildcardResourcesAndTTL(watch.Request.GetTypeUrl())
-			} else {
-				resources = snapshot.GetResourcesAndTTL(watch.Request.GetTypeUrl())
-			}
+			// For ODCDS: get wildcard resources + explicitly subscribed resources
+			resources := getResourcesAndTTLForSubscription(
+				snapshot,
+				watch.Request.GetTypeUrl(),
+				watch.subscription.SubscribedResources(),
+				watch.subscription.IsWildcard(),
+			)
 
 			// TODO(snowp): Construct this once per type instead of once per watch.
 			resourcesWithTTL := map[string]types.ResourceWithTTL{}
@@ -268,14 +307,13 @@ func (cache *snapshotCache) respondSOTWWatches(ctx context.Context, info *status
 		version := snapshot.GetVersion(watch.Request.GetTypeUrl())
 		if version != watch.Request.GetVersionInfo() {
 			cache.log.Debugf("respond open watch %d %s %v with new version %q", id, watch.Request.GetTypeUrl(), watch.Request.GetResourceNames(), version)
-			// For wildcard requests, only include wildcard-eligible resources
-			// For named requests, include all resources so they can be fetched on-demand
-			var resources map[string]types.ResourceWithTTL
-			if watch.subscription.IsWildcard() {
-				resources = snapshot.GetWildcardResourcesAndTTL(watch.Request.GetTypeUrl())
-			} else {
-				resources = snapshot.GetResourcesAndTTL(watch.Request.GetTypeUrl())
-			}
+			// For ODCDS: get wildcard resources + explicitly subscribed resources
+			resources := getResourcesAndTTLForSubscription(
+				snapshot,
+				watch.Request.GetTypeUrl(),
+				watch.subscription.SubscribedResources(),
+				watch.subscription.IsWildcard(),
+			)
 			err := cache.respond(ctx, watch, resources, version, false)
 			if err != nil {
 				return err
@@ -443,14 +481,13 @@ func (cache *snapshotCache) CreateWatch(request *Request, sub Subscription, valu
 	}
 
 	version := snapshot.GetVersion(request.GetTypeUrl())
-	// For wildcard requests, only include wildcard-eligible resources
-	// For named requests, include all resources so they can be fetched on-demand
-	var resources map[string]types.ResourceWithTTL
-	if sub.IsWildcard() {
-		resources = snapshot.GetWildcardResourcesAndTTL(request.GetTypeUrl())
-	} else {
-		resources = snapshot.GetResourcesAndTTL(request.GetTypeUrl())
-	}
+	// For ODCDS: get wildcard resources + explicitly subscribed resources
+	resources := getResourcesAndTTLForSubscription(
+		snapshot,
+		request.GetTypeUrl(),
+		sub.SubscribedResources(),
+		sub.IsWildcard(),
+	)
 
 	if request.GetVersionInfo() == version {
 		// Retrieve whether there are resources in the cache requested and currently unknown to the client.
@@ -624,14 +661,13 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 
 // Respond to a delta watch with the provided snapshot value. If the response is nil, there has been no state change.
 func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceSnapshot, request *DeltaRequest, value chan DeltaResponse, sub Subscription) (*RawDeltaResponse, error) {
-	// For wildcard requests, only include wildcard-eligible resources (ODCDS support)
-	// For named requests, include all resources so they can be fetched on-demand
-	var resourceMap map[string]types.Resource
-	if sub.IsWildcard() {
-		resourceMap = snapshot.GetWildcardResources(request.GetTypeUrl())
-	} else {
-		resourceMap = snapshot.GetResources(request.GetTypeUrl())
-	}
+	// For ODCDS: get wildcard resources + explicitly subscribed resources
+	resourceMap := getResourcesForSubscription(
+		snapshot,
+		request.GetTypeUrl(),
+		sub.SubscribedResources(),
+		sub.IsWildcard(),
+	)
 
 	resp := createDeltaResponse(ctx, request, sub, resourceContainer{
 		resourceMap: resourceMap,
