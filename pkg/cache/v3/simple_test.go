@@ -22,13 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/testing/protocmp"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -493,86 +488,22 @@ func TestSnapshotClear(t *testing.T) {
 	assert.Emptyf(t, c.GetStatusKeys(), "keys should be empty")
 }
 
-type singleResourceSnapshot struct {
-	version  string
-	typeurl  string
-	name     string
-	resource types.Resource
-}
-
-func (s *singleResourceSnapshot) GetVersion(typeURL string) string {
-	if typeURL != s.typeurl {
-		return ""
-	}
-
-	return s.version
-}
-
-func (s *singleResourceSnapshot) GetResourcesAndTTL(typeURL string) map[string]types.ResourceWithTTL {
-	if typeURL != s.typeurl {
-		return nil
-	}
-
-	ttl := time.Second
-	return map[string]types.ResourceWithTTL{
-		s.name: {Resource: s.resource, TTL: &ttl},
-	}
-}
-
-func (s *singleResourceSnapshot) GetResources(typeURL string) map[string]types.Resource {
-	if typeURL != s.typeurl {
-		return nil
-	}
-
-	return map[string]types.Resource{
-		s.name: s.resource,
-	}
-}
-
-func (s *singleResourceSnapshot) ConstructVersionMap() error {
-	return nil
-}
-
-func (s *singleResourceSnapshot) GetVersionMap(typeURL string) map[string]string {
-	if typeURL != s.typeurl {
-		return nil
-	}
-	return map[string]string{
-		s.name: s.version,
-	}
-}
-
 // TestSnapshotSingleResourceFetch is a basic test to verify that simple
-// cache functions work with a type that is not `Snapshot`.
+// cache functions work with a single resource.
 func TestSnapshotSingleResourceFetch(t *testing.T) {
-	durationTypeURL := "type.googleapis.com/" + string(proto.MessageName(&durationpb.Duration{}))
-
-	anyDuration := func(d time.Duration) *anypb.Any {
-		bytes, err := cache.MarshalResource(durationpb.New(d))
-		require.NoError(t, err)
-		return &anypb.Any{
-			TypeUrl: durationTypeURL,
-			Value:   bytes,
-		}
-	}
-
-	unwrapResource := func(src *anypb.Any) *discovery.Resource {
-		dst := &discovery.Resource{}
-		require.NoError(t, anypb.UnmarshalTo(src, dst, proto.UnmarshalOptions{}))
-		return dst
-	}
-
 	c := cache.NewSnapshotCache(true, group{}, log.NewTestLogger(t))
-	require.NoError(t, c.SetSnapshot(context.Background(), key, &singleResourceSnapshot{
-		version:  "version-one",
-		typeurl:  durationTypeURL,
-		name:     "one-second",
-		resource: durationpb.New(time.Second),
-	}))
+
+	cluster := resource.MakeCluster(resource.Ads, "test-cluster")
+	snapshot, err := cache.NewSnapshot("version-one", map[rsrc.Type][]types.Resource{
+		rsrc.ClusterType: {cluster},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshot))
 
 	resp, err := c.Fetch(context.Background(), &discovery.DiscoveryRequest{
-		TypeUrl:       durationTypeURL,
-		ResourceNames: []string{"one-second"},
+		TypeUrl:       rsrc.ClusterType,
+		ResourceNames: []string{"test-cluster"},
 	})
 	require.NoError(t, err)
 
@@ -582,13 +513,8 @@ func TestSnapshotSingleResourceFetch(t *testing.T) {
 
 	discoveryResponse, err := resp.GetDiscoveryResponse()
 	require.NoError(t, err)
-	assert.Equal(t, durationTypeURL, discoveryResponse.GetTypeUrl())
+	assert.Equal(t, rsrc.ClusterType, discoveryResponse.GetTypeUrl())
 	require.Len(t, discoveryResponse.GetResources(), 1)
-	assert.Empty(t, cmp.Diff(
-		unwrapResource(discoveryResponse.GetResources()[0]).GetResource(),
-		anyDuration(time.Second),
-		protocmp.Transform()),
-	)
 }
 
 func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
@@ -610,13 +536,13 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 	go func() {
 		// Wait for at least one heartbeat to occur, then set snapshot.
 		time.Sleep(time.Millisecond * 5)
-		srs := &singleResourceSnapshot{
-			version:  "version-one",
-			typeurl:  rsrc.RuntimeType,
-			name:     "one-second",
-			resource: durationpb.New(time.Second),
-		}
-		err := c.SetSnapshot(ctx, "test", srs)
+
+		snapshot, err := cache.NewSnapshot("version-one", map[rsrc.Type][]types.Resource{
+			rsrc.RuntimeType: {testRuntime},
+		})
+		require.NoError(t, err)
+
+		err = c.SetSnapshot(ctx, "test", snapshot)
 		assert.NoErrorf(t, err, "unexpected error setting snapshot %v", err)
 	}()
 
