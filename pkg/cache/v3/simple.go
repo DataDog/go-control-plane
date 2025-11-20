@@ -306,12 +306,7 @@ func (cache *snapshotCache) respondSOTWWatches(ctx context.Context, info *status
 		version := snapshot.GetVersion(watch.Request.GetTypeUrl())
 		if version != watch.Request.GetVersionInfo() {
 			cache.log.Debugf("respond open watch %d %s %v with new version %q", id, watch.Request.GetTypeUrl(), watch.Request.GetResourceNames(), version)
-			resources := getResourcesAndTTLForSubscription(
-				snapshot,
-				watch.Request.GetTypeUrl(),
-				watch.subscription.SubscribedResources(),
-				watch.subscription.IsWildcard(),
-			)
+			resources := getResourcesAndTTLForSubscription(snapshot, watch.Request.GetTypeUrl(), watch.subscription.SubscribedResources(), watch.subscription.IsWildcard())
 			err := cache.respond(ctx, watch, resources, version, false)
 			if err != nil {
 				return err
@@ -499,7 +494,6 @@ func (cache *snapshotCache) CreateWatch(request *Request, sub Subscription, valu
 		} else {
 			// Check if a wildcard-eligible resource present in the snapshot is currently not returned,
 			// for instance if the subscription is newly wildcard.
-			// Only check wildcard resources for wildcard subscriptions
 			for r := range snapshot.GetWildcardResources(request.GetTypeUrl()) {
 				if _, ok := knownResourceNames[r]; !ok {
 					shouldRespond = true
@@ -657,10 +651,8 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 
 // Respond to a delta watch with the provided snapshot value. If the response is nil, there has been no state change.
 func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceSnapshot, request *DeltaRequest, value chan DeltaResponse, sub Subscription) (*RawDeltaResponse, error) {
-	resourceMap := getResourcesForSubscription(snapshot, request.GetTypeUrl(), sub.SubscribedResources(), sub.IsWildcard())
-
 	resp := createDeltaResponse(ctx, request, sub, resourceContainer{
-		resourceMap: resourceMap,
+		resourceMap: getResourcesForSubscription(snapshot, request.GetTypeUrl(), sub.SubscribedResources(), sub.IsWildcard()),
 		versionMap:  snapshot.GetVersionMap(request.GetTypeUrl()),
 	}, snapshot.GetVersion(request.GetTypeUrl()))
 
