@@ -22,8 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -488,22 +493,96 @@ func TestSnapshotClear(t *testing.T) {
 	assert.Emptyf(t, c.GetStatusKeys(), "keys should be empty")
 }
 
+type singleResourceSnapshot struct {
+	version  string
+	typeurl  string
+	name     string
+	resource types.Resource
+}
+
+func (s *singleResourceSnapshot) GetVersion(typeURL string) string {
+	if typeURL != s.typeurl {
+		return ""
+	}
+
+	return s.version
+}
+
+func (s *singleResourceSnapshot) GetResourcesAndTTL(typeURL string) map[string]types.ResourceWithTTL {
+	if typeURL != s.typeurl {
+		return nil
+	}
+
+	ttl := time.Second
+	return map[string]types.ResourceWithTTL{
+		s.name: {Resource: s.resource, TTL: &ttl},
+	}
+}
+
+func (s *singleResourceSnapshot) GetResources(typeURL string) map[string]types.Resource {
+	if typeURL != s.typeurl {
+		return nil
+	}
+
+	return map[string]types.Resource{
+		s.name: s.resource,
+	}
+}
+
+func (s *singleResourceSnapshot) ConstructVersionMap() error {
+	return nil
+}
+
+func (s *singleResourceSnapshot) GetVersionMap(typeURL string) map[string]string {
+	if typeURL != s.typeurl {
+		return nil
+	}
+	return map[string]string{
+		s.name: s.version,
+	}
+}
+
+func (s *singleResourceSnapshot) GetWildcardResources(typeURL string) map[string]types.Resource {
+	// For this simple mock, treat all resources as wildcard (backward compatible behavior)
+	return s.GetResources(typeURL)
+}
+
+func (s *singleResourceSnapshot) GetWildcardResourcesAndTTL(typeURL string) map[string]types.ResourceWithTTL {
+	// For this simple mock, treat all resources as wildcard (backward compatible behavior)
+	return s.GetResourcesAndTTL(typeURL)
+}
+
 // TestSnapshotSingleResourceFetch is a basic test to verify that simple
-// cache functions work with a single resource.
+// cache functions work with a type that is not `Snapshot`.
 func TestSnapshotSingleResourceFetch(t *testing.T) {
+	durationTypeURL := "type.googleapis.com/" + string(proto.MessageName(&durationpb.Duration{}))
+
+	anyDuration := func(d time.Duration) *anypb.Any {
+		bytes, err := cache.MarshalResource(durationpb.New(d))
+		require.NoError(t, err)
+		return &anypb.Any{
+			TypeUrl: durationTypeURL,
+			Value:   bytes,
+		}
+	}
+
+	unwrapResource := func(src *anypb.Any) *discovery.Resource {
+		dst := &discovery.Resource{}
+		require.NoError(t, anypb.UnmarshalTo(src, dst, proto.UnmarshalOptions{}))
+		return dst
+	}
+
 	c := cache.NewSnapshotCache(true, group{}, log.NewTestLogger(t))
-
-	cluster := resource.MakeCluster(resource.Ads, "test-cluster")
-	snapshot, err := cache.NewSnapshot("version-one", map[rsrc.Type][]types.Resource{
-		rsrc.ClusterType: {cluster},
-	})
-	require.NoError(t, err)
-
-	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshot))
+	require.NoError(t, c.SetSnapshot(context.Background(), key, &singleResourceSnapshot{
+		version:  "version-one",
+		typeurl:  durationTypeURL,
+		name:     "one-second",
+		resource: durationpb.New(time.Second),
+	}))
 
 	resp, err := c.Fetch(context.Background(), &discovery.DiscoveryRequest{
-		TypeUrl:       rsrc.ClusterType,
-		ResourceNames: []string{"test-cluster"},
+		TypeUrl:       durationTypeURL,
+		ResourceNames: []string{"one-second"},
 	})
 	require.NoError(t, err)
 
@@ -513,8 +592,13 @@ func TestSnapshotSingleResourceFetch(t *testing.T) {
 
 	discoveryResponse, err := resp.GetDiscoveryResponse()
 	require.NoError(t, err)
-	assert.Equal(t, rsrc.ClusterType, discoveryResponse.GetTypeUrl())
+	assert.Equal(t, durationTypeURL, discoveryResponse.GetTypeUrl())
 	require.Len(t, discoveryResponse.GetResources(), 1)
+	assert.Empty(t, cmp.Diff(
+		unwrapResource(discoveryResponse.GetResources()[0]).GetResource(),
+		anyDuration(time.Second),
+		protocmp.Transform()),
+	)
 }
 
 func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
@@ -524,10 +608,10 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 	// Create watch.
 	req := &cache.Request{
 		Node:          &core.Node{Id: "test"},
-		ResourceNames: []string{testRuntime.Name},
+		ResourceNames: []string{"one-second"},
 		TypeUrl:       rsrc.RuntimeType,
 	}
-	ss := stream.NewSotwSubscription([]string{testRuntime.Name}, true)
+	ss := stream.NewSotwSubscription([]string{"one-second"}, true)
 	ss.SetReturnedResources(map[string]string{"cluster": "abcdef"})
 	responder := make(chan cache.Response)
 	_, err := c.CreateWatch(req, ss, responder)
@@ -536,13 +620,13 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 	go func() {
 		// Wait for at least one heartbeat to occur, then set snapshot.
 		time.Sleep(time.Millisecond * 5)
-
-		snapshot, err := cache.NewSnapshot("version-one", map[rsrc.Type][]types.Resource{
-			rsrc.RuntimeType: {testRuntime},
-		})
-		require.NoError(t, err)
-
-		err = c.SetSnapshot(ctx, "test", snapshot)
+		srs := &singleResourceSnapshot{
+			version:  "version-one",
+			typeurl:  rsrc.RuntimeType,
+			name:     "one-second",
+			resource: durationpb.New(time.Second),
+		}
+		err := c.SetSnapshot(ctx, "test", srs)
 		assert.NoErrorf(t, err, "unexpected error setting snapshot %v", err)
 	}()
 

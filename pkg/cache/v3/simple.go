@@ -657,12 +657,7 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 
 // Respond to a delta watch with the provided snapshot value. If the response is nil, there has been no state change.
 func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceSnapshot, request *DeltaRequest, value chan DeltaResponse, sub Subscription) (*RawDeltaResponse, error) {
-	resourceMap := getResourcesForSubscription(
-		snapshot,
-		request.GetTypeUrl(),
-		sub.SubscribedResources(),
-		sub.IsWildcard(),
-	)
+	resourceMap := getResourcesForSubscription(snapshot, request.GetTypeUrl(), sub.SubscribedResources(), sub.IsWildcard())
 
 	resp := createDeltaResponse(ctx, request, sub, resourceContainer{
 		resourceMap: resourceMap,
