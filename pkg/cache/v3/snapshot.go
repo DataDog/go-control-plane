@@ -46,6 +46,7 @@ type Snapshot struct {
 // where some clusters should only be sent when explicitly requested by name.
 type SnapshotResource struct {
 	Resource types.ResourceWithTTL
+
 	// Wildcard indicates if this resource should be returned for wildcard requests.
 	// true = include in wildcard responses (proactively pushed)
 	// false = only send when explicitly requested by name (on-demand)

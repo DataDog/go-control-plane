@@ -192,6 +192,11 @@ func getResourcesAndTTLForSubscription(snapshot ResourceSnapshot, typeURL string
 		}
 	}
 
+	// For non-wildcard subscriptions, if no resources matched, return nil to indicate no response should be sent
+	if !isWildcard && len(resources) == 0 {
+		return nil
+	}
+
 	return resources
 }
 
@@ -243,13 +248,7 @@ func (cache *snapshotCache) sendHeartbeats(ctx context.Context, node string) {
 		for id, watch := range info.watches {
 			// Respond with the current version regardless of whether the version has changed.
 			version := snapshot.GetVersion(watch.Request.GetTypeUrl())
-			// For ODCDS: get wildcard resources + explicitly subscribed resources
-			resources := getResourcesAndTTLForSubscription(
-				snapshot,
-				watch.Request.GetTypeUrl(),
-				watch.subscription.SubscribedResources(),
-				watch.subscription.IsWildcard(),
-			)
+			resources := getResourcesAndTTLForSubscription(snapshot, watch.Request.GetTypeUrl(), watch.subscription.SubscribedResources(), watch.subscription.IsWildcard())
 
 			// TODO(snowp): Construct this once per type instead of once per watch.
 			resourcesWithTTL := map[string]types.ResourceWithTTL{}
@@ -307,7 +306,6 @@ func (cache *snapshotCache) respondSOTWWatches(ctx context.Context, info *status
 		version := snapshot.GetVersion(watch.Request.GetTypeUrl())
 		if version != watch.Request.GetVersionInfo() {
 			cache.log.Debugf("respond open watch %d %s %v with new version %q", id, watch.Request.GetTypeUrl(), watch.Request.GetResourceNames(), version)
-			// For ODCDS: get wildcard resources + explicitly subscribed resources
 			resources := getResourcesAndTTLForSubscription(
 				snapshot,
 				watch.Request.GetTypeUrl(),
@@ -481,13 +479,7 @@ func (cache *snapshotCache) CreateWatch(request *Request, sub Subscription, valu
 	}
 
 	version := snapshot.GetVersion(request.GetTypeUrl())
-	// For ODCDS: get wildcard resources + explicitly subscribed resources
-	resources := getResourcesAndTTLForSubscription(
-		snapshot,
-		request.GetTypeUrl(),
-		sub.SubscribedResources(),
-		sub.IsWildcard(),
-	)
+	resources := getResourcesAndTTLForSubscription(snapshot, request.GetTypeUrl(), sub.SubscribedResources(), sub.IsWildcard())
 
 	if request.GetVersionInfo() == version {
 		// Retrieve whether there are resources in the cache requested and currently unknown to the client.
@@ -552,6 +544,10 @@ func (cache *snapshotCache) cancelWatch(nodeID string, watchID int64) func() {
 // Respond to a watch with the snapshot value. The value channel should have capacity not to block.
 // TODO(kuat) do not respond always, see issue https://github.com/envoyproxy/go-control-plane/issues/46
 func (cache *snapshotCache) respond(ctx context.Context, watch ResponseWatch, resources map[string]types.ResourceWithTTL, version string, heartbeat bool) error {
+	if resources == nil {
+		return nil
+	}
+
 	request := watch.Request
 	// for ADS, the request names must match the snapshot names
 	// if they do not, then the watch is never responded, and it is expected that envoy makes another request
@@ -661,7 +657,6 @@ func (cache *snapshotCache) CreateDeltaWatch(request *DeltaRequest, sub Subscrip
 
 // Respond to a delta watch with the provided snapshot value. If the response is nil, there has been no state change.
 func (cache *snapshotCache) respondDelta(ctx context.Context, snapshot ResourceSnapshot, request *DeltaRequest, value chan DeltaResponse, sub Subscription) (*RawDeltaResponse, error) {
-	// For ODCDS: get wildcard resources + explicitly subscribed resources
 	resourceMap := getResourcesForSubscription(
 		snapshot,
 		request.GetTypeUrl(),
