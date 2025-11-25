@@ -514,6 +514,7 @@ func createResponse(snapshot ResourceSnapshot, watch ResponseWatch, ads bool) (*
 
 	// This implementation can seem more complex than needed, as it does not blindly rely on the request version.
 	// This allows for a more generic implemenentation when considering wildcard + subscribed, or partial replies.
+	// In other context a lot could be simplified as
 
 	reqVersion := watch.Request.VersionInfo
 	version := snapshot.GetVersion(typeURL)
