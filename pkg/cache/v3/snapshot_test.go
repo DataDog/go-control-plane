@@ -191,3 +191,46 @@ func TestNewSnapshotBadType(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, snap)
 }
+
+func TestSnapshotWithExplicitWildcard(t *testing.T) {
+	cluster1 := resource.MakeCluster(resource.Ads, "cluster1")
+	cluster2 := resource.MakeCluster(resource.Ads, "cluster2")
+	cluster3 := resource.MakeCluster(resource.Ads, "cluster3")
+
+	snapshot, err := cache.NewSnapshotWithExplicitWildcard("v1", map[rsrc.Type][]cache.SnapshotResource{
+		rsrc.ClusterType: {
+			{Resource: types.ResourceWithTTL{Resource: cluster1}, Wildcard: true},
+			{Resource: types.ResourceWithTTL{Resource: cluster2}, Wildcard: false},
+			{Resource: types.ResourceWithTTL{Resource: cluster3}, Wildcard: true},
+		},
+	})
+	require.NoError(t, err)
+
+	allResources := snapshot.GetResources(rsrc.ClusterType)
+	assert.Len(t, allResources, 3)
+
+	wildcardResources := snapshot.GetWildcardResources(rsrc.ClusterType)
+	assert.Len(t, wildcardResources, 2)
+	assert.Contains(t, wildcardResources, "cluster1")
+	assert.Contains(t, wildcardResources, "cluster3")
+
+	assert.True(t, snapshot.IsResourceWildcard(rsrc.ClusterType, "cluster1"))
+	assert.False(t, snapshot.IsResourceWildcard(rsrc.ClusterType, "cluster2"))
+	assert.True(t, snapshot.IsResourceWildcard(rsrc.ClusterType, "cluster3"))
+}
+
+func TestSnapshotWildcardBackwardCompatibility(t *testing.T) {
+	cluster1 := resource.MakeCluster(resource.Ads, "cluster1")
+	cluster2 := resource.MakeCluster(resource.Ads, "cluster2")
+
+	snapshot, err := cache.NewSnapshot("v1", map[rsrc.Type][]types.Resource{
+		rsrc.ClusterType: {cluster1, cluster2},
+	})
+	require.NoError(t, err)
+
+	wildcardResources := snapshot.GetWildcardResources(rsrc.ClusterType)
+	assert.Len(t, wildcardResources, 2)
+
+	assert.True(t, snapshot.IsResourceWildcard(rsrc.ClusterType, "cluster1"))
+	assert.True(t, snapshot.IsResourceWildcard(rsrc.ClusterType, "cluster2"))
+}
