@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package shardingtable.v1;
+
+option go_package = "github.com/envoyproxy/go-control-plane/examples/shardingtable/resource;resource";
+
+message ShardingTable {
+  string name = 1;
+  string content = 2;
+}
