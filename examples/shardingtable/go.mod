@@ -1,0 +1,26 @@
+module github.com/envoyproxy/go-control-plane/examples/shardingtable
+
+go 1.24.0
+
+replace github.com/envoyproxy/go-control-plane => ../..
+
+require (
+	github.com/cncf/udpa/go v0.0.0-20220112060539-c52dc94e7fbe
+	github.com/cncf/xds/go v0.0.0-20251110193048-8bfbf64dc13e
+	github.com/envoyproxy/go-control-plane v0.13.5-0.20251024222203-75eaa193e329
+	github.com/envoyproxy/go-control-plane/envoy v1.36.0
+	google.golang.org/grpc v1.77.0
+	google.golang.org/protobuf v1.36.10
+)
+
+require (
+	cel.dev/expr v0.24.0 // indirect
+	github.com/envoyproxy/go-control-plane/ratelimit v0.1.0 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	golang.org/x/net v0.46.1-0.20251013234738-63d1a5100f82 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20251022142026-3a174f9686a8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251022142026-3a174f9686a8 // indirect
+)

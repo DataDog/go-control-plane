@@ -18,3 +18,5 @@ examples/dyplomat/dyplomat
 /envoy*.log
 
 .tools/
+
+examples/shardingtable/third_party/

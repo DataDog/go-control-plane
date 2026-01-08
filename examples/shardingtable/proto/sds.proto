@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package shardingtable.v1;
+
+import "envoy/service/discovery/v3/discovery.proto";
+import "envoy/annotations/resource.proto";
+
+option go_package = "github.com/envoyproxy/go-control-plane/examples/shardingtable/resource;resource";
+
+service ShardingDiscoveryService {
+  option (envoy.annotations.resource).type = "type.googleapis.com/shardingtable.v1.ShardingTable";
+
+  rpc StreamShardingTables(stream envoy.service.discovery.v3.DiscoveryRequest)
+      returns (stream envoy.service.discovery.v3.DiscoveryResponse) {
+  }
+
+  rpc FetchShardingTables(envoy.service.discovery.v3.DiscoveryRequest)
+      returns (envoy.service.discovery.v3.DiscoveryResponse) {
+  }
+
+  rpc DeltaShardingTables(stream envoy.service.discovery.v3.DeltaDiscoveryRequest)
+      returns (stream envoy.service.discovery.v3.DeltaDiscoveryResponse) {
+  }
+}
