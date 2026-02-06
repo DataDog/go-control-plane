@@ -50,6 +50,8 @@ func GetResponseType(typeURL resource.Type) types.ResponseType {
 		return types.ExtensionConfig
 	case resource.RateLimitConfigType:
 		return types.RateLimitConfig
+	case resource.LbEndpointType:
+		return types.LbEndpoint
 	}
 	return types.UnknownType
 }
@@ -77,6 +79,8 @@ func GetResponseTypeURL(responseType types.ResponseType) (string, error) {
 		return resource.ExtensionConfigType, nil
 	case types.RateLimitConfig:
 		return resource.RateLimitConfigType, nil
+	case types.LbEndpoint:
+		return resource.LbEndpointType, nil
 	default:
 		return "", fmt.Errorf("couldn't map response type %v to known resource type", responseType)
 	}
