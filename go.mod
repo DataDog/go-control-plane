@@ -1,8 +1,6 @@
 module github.com/envoyproxy/go-control-plane
 
-go 1.24.0
-
-toolchain go1.24.9
+go 1.25.7
 
 replace (
 	github.com/envoyproxy/go-control-plane/envoy => ./envoy
