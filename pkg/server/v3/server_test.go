@@ -48,7 +48,6 @@ type mockConfigWatcher struct {
 	responses      map[string][]cache.Response
 	deltaResources map[string]map[string]types.Resource
 	watches        int
-	deltaWatches   int
 
 	mu *sync.RWMutex
 }
@@ -173,7 +172,7 @@ var (
 	runtime            = resource.MakeRuntime(runtimeName)
 	extensionConfig    = resource.MakeExtensionConfig(resource.Ads, extensionConfigName, routeName)
 	opaque             = &core.Address{}
-	opaqueType         = "unknown-type"
+	opaqueType         = "type.googleapis.com/" + string(opaque.ProtoReflect().Descriptor().FullName())
 	nilType            = "nil-stream-type" // This type will force the close of the connection
 	testTypes          = []string{
 		rsrc.EndpointType,

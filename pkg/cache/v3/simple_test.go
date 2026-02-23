@@ -66,9 +66,17 @@ func updateFromSotwResponse(resp cache.Response, sub *stream.Subscription, req *
 	req.VersionInfo = version
 }
 
+func srfrt(res types.ResourceWithTTL) types.SnapshotResource {
+	return types.SnapshotResource{
+		Name:     cache.GetResourceName(res.Resource),
+		Resource: res.Resource,
+		TTL:      res.TTL,
+	}
+}
+
 var (
-	ttl                = 2 * time.Second
-	snapshotWithTTL, _ = cache.NewSnapshotWithTTLs(fixture.version, map[rsrc.Type][]types.ResourceWithTTL{
+	ttl           = 2 * time.Second
+	testResources = map[rsrc.Type][]types.ResourceWithTTL{
 		rsrc.EndpointType:        {{Resource: testEndpoint, TTL: &ttl}},
 		rsrc.ClusterType:         {{Resource: testCluster}},
 		rsrc.RouteType:           {{Resource: testRoute}, {Resource: testEmbeddedRoute}},
@@ -78,7 +86,7 @@ var (
 		rsrc.RuntimeType:         {{Resource: testRuntime}},
 		rsrc.SecretType:          {{Resource: testSecret[0]}},
 		rsrc.ExtensionConfigType: {{Resource: testExtensionConfig}},
-	})
+	}
 
 	names = map[string][]string{
 		rsrc.EndpointType:    {clusterName},
@@ -108,6 +116,18 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 	_, err := c.GetSnapshot(key)
 	require.Errorf(t, err, "unexpected snapshot found for key %q", key)
 
+	snapshots := []types.TypeSnapshot{}
+	for typeURL, resources := range testResources {
+		snapRes := []types.SnapshotResource{}
+		for _, res := range resources {
+			snapRes = append(snapRes, srfrt(res))
+		}
+		snap, err := types.NewTypeSnapshot(typeURL, fixture.version, snapRes)
+		require.NoError(t, err)
+		snapshots = append(snapshots, snap)
+	}
+	snapshotWithTTL, err := types.NewSnapshotFromTypeSnapshots(fixture.version, snapshots)
+	require.NoError(t, err)
 	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshotWithTTL))
 
 	snap, err := c.GetSnapshot(key)
@@ -117,6 +137,7 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 	wg := sync.WaitGroup{}
 	// All the resources should respond immediately when version is not up to date.
 	subs := map[string]stream.Subscription{}
+	mu := sync.Mutex{}
 	for _, typ := range testTypes {
 		wg.Add(1)
 		t.Run(typ, func(t *testing.T) {
@@ -130,10 +151,12 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 			case out := <-value:
 				gotVersion, _ := out.GetVersion()
 				assert.Equalf(t, gotVersion, fixture.version, "got version %q, want %q", gotVersion, fixture.version)
-				assert.Truef(t, reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).GetRawResources()), snapshotWithTTL.GetResourcesAndTTL(typ)), "get resources %v, want %v", out.(*cache.RawResponse).GetRawResources(), snapshotWithTTL.GetResourcesAndTTL(typ))
+				assert.ElementsMatch(t, out.(*cache.RawResponse).GetRawResources(), testResources[typ])
 
 				updateFromSotwResponse(out, &sub, req)
+				mu.Lock()
 				subs[typ] = sub
+				mu.Unlock()
 			case <-time.After(2 * time.Second):
 				t.Errorf("failed to receive snapshot response")
 			}
@@ -151,7 +174,9 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 
 			end := time.After(5 * time.Second)
 			for {
+				mu.Lock()
 				sub := subs[typ]
+				mu.Unlock()
 				value := make(chan cache.Response, 1)
 				cancel, err := c.CreateWatch(&discovery.DiscoveryRequest{TypeUrl: typ, ResourceNames: names[typ], VersionInfo: fixture.version},
 					sub, value)
@@ -159,13 +184,14 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 
 				select {
 				case out := <-value:
+					t.Logf("received reply for %s, expected %s", out.GetRequest().TypeUrl, typ)
 					gotVersion, _ := out.GetVersion()
 					assert.Equalf(t, gotVersion, fixture.version, "got version %q, want %q", gotVersion, fixture.version)
-					assert.Truef(t, reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).GetRawResources()), snapshotWithTTL.GetResourcesAndTTL(typ)), "get resources %v, want %v", out.(*cache.RawResponse).GetRawResources(), snapshotWithTTL.GetResources(typ))
+					assert.ElementsMatch(t, out.(*cache.RawResponse).GetRawResources(), testResources[typ])
 
-					assert.Truef(t, reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).GetRawResources()), snapshotWithTTL.GetResourcesAndTTL(typ)), "get resources %v, want %v", out.(*cache.RawResponse).GetRawResources(), snapshotWithTTL.GetResources(typ))
-
+					mu.Lock()
 					updatesByType[typ]++
+					mu.Unlock()
 
 					returnedResources := make(map[string]string)
 					// Update sub to track what was returned
@@ -173,7 +199,9 @@ func TestSnapshotCacheWithTTL(t *testing.T) {
 						returnedResources[resource] = fixture.version
 					}
 					sub.SetReturnedResources(returnedResources)
+					mu.Lock()
 					subs[typ] = sub
+					mu.Unlock()
 				case <-end:
 					cancel()
 					return
@@ -418,15 +446,28 @@ func TestSnapshotCreateWatchWithResourcePreviouslyNotRequested(t *testing.T) {
 	listenerName2 := "listenerName2"
 	c := cache.NewSnapshotCache(false, group{}, log.NewTestLogger(t))
 
-	snapshot2, _ := cache.NewSnapshot(fixture.version, map[rsrc.Type][]types.Resource{
-		rsrc.EndpointType:        {testEndpoint, resource.MakeEndpoint(clusterName2, 8080)},
-		rsrc.ClusterType:         {testCluster, resource.MakeCluster(resource.Ads, clusterName2)},
-		rsrc.RouteType:           {testRoute, resource.MakeRouteConfig(routeName2, clusterName2)},
-		rsrc.ListenerType:        {testScopedListener, resource.MakeRouteHTTPListener(resource.Ads, listenerName2, 80, routeName2)},
+	testResources := map[rsrc.Type][]types.ResourceWithTTL{
+		rsrc.EndpointType:        {{Resource: testEndpoint}, {Resource: resource.MakeEndpoint(clusterName2, 8080)}},
+		rsrc.ClusterType:         {{Resource: testCluster}, {Resource: resource.MakeCluster(resource.Ads, clusterName2)}},
+		rsrc.RouteType:           {{Resource: testRoute}, {Resource: resource.MakeRouteConfig(routeName2, clusterName2)}},
+		rsrc.ListenerType:        {{Resource: testScopedListener}, {Resource: resource.MakeRouteHTTPListener(resource.Ads, listenerName2, 80, routeName2)}},
 		rsrc.RuntimeType:         {},
 		rsrc.SecretType:          {},
 		rsrc.ExtensionConfigType: {},
-	})
+	}
+
+	snapshots := []types.TypeSnapshot{}
+	for typeURL, resources := range testResources {
+		snapRes := []types.SnapshotResource{}
+		for _, res := range resources {
+			snapRes = append(snapRes, srfrt(res))
+		}
+		snap, err := types.NewTypeSnapshot(typeURL, fixture.version, snapRes)
+		require.NoError(t, err)
+		snapshots = append(snapshots, snap)
+	}
+	snapshot2, err := types.NewSnapshotFromTypeSnapshots(fixture.version, snapshots)
+	require.NoError(t, err)
 	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshot2))
 	watch := make(chan cache.Response)
 
@@ -441,7 +482,7 @@ func TestSnapshotCreateWatchWithResourcePreviouslyNotRequested(t *testing.T) {
 	case out := <-watch:
 		gotVersion, _ := out.GetVersion()
 		assert.Equalf(t, gotVersion, fixture.version, "got version %q, want %q", gotVersion, fixture.version)
-		want := map[string]types.ResourceWithTTL{clusterName: snapshot2.Resources[types.Cluster].Items[clusterName]}
+		want := map[string]types.ResourceWithTTL{clusterName: {Resource: testCluster}}
 		assert.Truef(t, reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).GetRawResources()), want), "got resources %v, want %v", out.(*cache.RawResponse).GetRawResources(), want)
 	case <-time.After(time.Second):
 		t.Fatal("failed to receive snapshot response")
@@ -464,7 +505,7 @@ func TestSnapshotCreateWatchWithResourcePreviouslyNotRequested(t *testing.T) {
 	case out := <-watch:
 		gotVersion, _ := out.GetVersion()
 		assert.Equalf(t, gotVersion, fixture.version, "got version %q, want %q", gotVersion, fixture.version)
-		assert.Truef(t, reflect.DeepEqual(cache.IndexResourcesByName(out.(*cache.RawResponse).GetRawResources()), snapshot2.Resources[types.Cluster].Items), "got resources %v, want %v", out.(*cache.RawResponse).GetRawResources(), snapshot2.Resources[types.Endpoint].Items)
+		assert.ElementsMatch(t, testResources[rsrc.ClusterType], out.(*cache.RawResponse).GetRawResources())
 	case <-time.After(time.Second):
 		t.Fatal("failed to receive snapshot response")
 	}
@@ -530,17 +571,19 @@ func (s *singleResourceSnapshot) GetResources(typeURL string) map[string]types.R
 	}
 }
 
-func (s *singleResourceSnapshot) ConstructVersionMap() error {
-	return nil
-}
-
-func (s *singleResourceSnapshot) GetVersionMap(typeURL string) map[string]string {
+func (s *singleResourceSnapshot) GetTypeSnapshot(typeURL string) types.TypeSnapshot {
 	if typeURL != s.typeurl {
-		return nil
+		return types.TypeSnapshot{}
 	}
-	return map[string]string{
-		s.name: s.version,
+
+	ttl := 5 * time.Second
+	res := types.SnapshotResource{
+		Name:     s.name,
+		Resource: s.resource,
+		TTL:      &ttl,
 	}
+	snapshot, _ := types.NewTypeSnapshot(typeURL, s.version, []types.SnapshotResource{res})
+	return snapshot
 }
 
 // TestSnapshotSingleResourceFetch is a basic test to verify that simple
@@ -549,7 +592,7 @@ func TestSnapshotSingleResourceFetch(t *testing.T) {
 	durationTypeURL := "type.googleapis.com/" + string(proto.MessageName(&durationpb.Duration{}))
 
 	anyDuration := func(d time.Duration) *anypb.Any {
-		bytes, err := cache.MarshalResource(durationpb.New(d))
+		bytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(durationpb.New(d))
 		require.NoError(t, err)
 		return &anypb.Any{
 			TypeUrl: durationTypeURL,
@@ -622,4 +665,137 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 	}()
 
 	<-responder
+}
+
+func TestSotwSnapshotCacheWithODCDS(t *testing.T) {
+	c := cache.NewSnapshotCache(false, group{}, log.NewTestLogger(t))
+
+	// Create snapshot with mixed wildcard eligibility (ODCDS)
+	wildcardCluster := resource.MakeCluster(resource.Ads, "wildcard-cluster")
+	onDemandCluster := resource.MakeCluster(resource.Ads, "on-demand-cluster")
+	onDemandCluster2 := resource.MakeCluster(resource.Ads, "on-demand-cluster2")
+
+	snapshot, err := types.NewSnapshot("v1", map[string][]types.SnapshotResource{
+		rsrc.ClusterType: {
+			{Name: "wildcard-cluster", Resource: wildcardCluster, OnDemandOnly: false},
+			{Name: "on-demand-cluster", Resource: onDemandCluster, OnDemandOnly: true},
+			{Name: "on-demand-cluster2", Resource: onDemandCluster2, OnDemandOnly: true},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshot))
+
+	t.Run("wildcard subscription only returns wildcard resources", func(t *testing.T) {
+		value := make(chan cache.Response, 1)
+		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"*"}}
+		sub := stream.NewSotwSubscription([]string{"*"}, false)
+		_, err := c.CreateWatch(req, sub, value)
+		require.NoError(t, err)
+
+		select {
+		case out := <-value:
+			resources := out.(*cache.RawResponse).GetRawResources()
+			require.Len(t, resources, 1)
+			assert.Equal(t, "wildcard-cluster", cache.GetResourceName(resources[0].Resource))
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+
+	t.Run("ODCDS: wildcard + explicit returns union", func(t *testing.T) {
+		value := make(chan cache.Response, 1)
+		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"*", "on-demand-cluster"}}
+		sub := stream.NewSotwSubscription([]string{"*", "on-demand-cluster"}, false)
+		_, err := c.CreateWatch(req, sub, value)
+		require.NoError(t, err)
+
+		select {
+		case out := <-value:
+			resources := out.(*cache.RawResponse).GetRawResources()
+			require.Len(t, resources, 2)
+			names := []string{cache.GetResourceName(resources[0].Resource), cache.GetResourceName(resources[1].Resource)}
+			assert.ElementsMatch(t, []string{"wildcard-cluster", "on-demand-cluster"}, names)
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+
+	t.Run("explicit only returns requested resource", func(t *testing.T) {
+		value := make(chan cache.Response, 1)
+		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"on-demand-cluster2"}}
+		sub := stream.NewSotwSubscription([]string{"on-demand-cluster2"}, false)
+		_, err := c.CreateWatch(req, sub, value)
+		require.NoError(t, err)
+
+		select {
+		case out := <-value:
+			resources := out.(*cache.RawResponse).GetRawResources()
+			require.Len(t, resources, 1)
+			assert.Equal(t, "on-demand-cluster2", cache.GetResourceName(resources[0].Resource))
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+}
+
+func TestSnapshotCacheDeltaWithODCDS(t *testing.T) {
+	c := cache.NewSnapshotCache(false, group{}, log.NewTestLogger(t))
+
+	// Create snapshot with mixed wildcard eligibility (ODCDS)
+	wildcardCluster := resource.MakeCluster(resource.Ads, "wildcard-cluster")
+	onDemandCluster := resource.MakeCluster(resource.Ads, "on-demand-cluster")
+	onDemandCluster2 := resource.MakeCluster(resource.Ads, "on-demand-cluster2")
+
+	snapshot, err := types.NewSnapshot("v1", map[string][]types.SnapshotResource{
+		rsrc.ClusterType: {
+			{Name: "wildcard-cluster", Resource: wildcardCluster, OnDemandOnly: false},
+			{Name: "on-demand-cluster", Resource: onDemandCluster, OnDemandOnly: true},
+			{Name: "on-demand-cluster2", Resource: onDemandCluster2, OnDemandOnly: true},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.SetSnapshot(context.Background(), key, snapshot))
+
+	t.Run("delta wildcard subscription only returns wildcard resources", func(t *testing.T) {
+		value := make(chan cache.DeltaResponse, 1)
+		req := &discovery.DeltaDiscoveryRequest{
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{"*"},
+			Node:                   &core.Node{Id: key},
+		}
+		sub := stream.NewDeltaSubscription([]string{"*"}, nil, nil, false)
+		_, err := c.CreateDeltaWatch(req, sub, value)
+		require.NoError(t, err)
+
+		select {
+		case out := <-value:
+			resources := out.(*cache.RawDeltaResponse).GetRawResources()
+			require.Len(t, resources, 1)
+			assert.Equal(t, "wildcard-cluster", cache.GetResourceName(resources[0].Resource))
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+
+	t.Run("delta ODCDS: wildcard + explicit returns union", func(t *testing.T) {
+		value := make(chan cache.DeltaResponse, 1)
+		req := &discovery.DeltaDiscoveryRequest{
+			TypeUrl:                rsrc.ClusterType,
+			ResourceNamesSubscribe: []string{"*", "on-demand-cluster"},
+			Node:                   &core.Node{Id: key},
+		}
+		sub := stream.NewDeltaSubscription([]string{"*", "on-demand-cluster"}, nil, nil, false)
+		_, err := c.CreateDeltaWatch(req, sub, value)
+		require.NoError(t, err)
+
+		select {
+		case out := <-value:
+			resources := out.(*cache.RawDeltaResponse).GetRawResources()
+			require.Len(t, resources, 2)
+			names := []string{cache.GetResourceName(resources[0].Resource), cache.GetResourceName(resources[1].Resource)}
+			assert.ElementsMatch(t, []string{"wildcard-cluster", "on-demand-cluster"}, names)
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
 }
