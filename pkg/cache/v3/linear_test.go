@@ -1645,3 +1645,172 @@ func TestIsSubscribedTo(t *testing.T) {
 	assert.False(t, isSubscribedTo(subExact, "c"))
 	assert.Empty(t, subExact.SubscribedPrefixes())
 }
+
+func TestLinearIgnoreWildcard(t *testing.T) {
+	t.Run("explicit wildcard ignored", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add some resources to the cache
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+
+		// Create a wildcard watch (explicit "*")
+		w := make(chan Response, 1)
+		req := &Request{ResourceNames: []string{"*"}, TypeUrl: testType}
+		sub := stream.NewSotwSubscription(req.GetResourceNames(), true)
+		_, err := c.CreateWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should receive empty response (no resources)
+		resp := verifyResponse(t, w, "", 0)
+		assert.Empty(t, resp.GetReturnedResources())
+	})
+
+	t.Run("mixed subscription filtered", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add resources
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+		require.NoError(t, c.UpdateResource("c", testResource("c")))
+
+		// Request with both wildcard and explicit resources
+		w := make(chan Response, 1)
+		req := &Request{ResourceNames: []string{"*", "a"}, TypeUrl: testType}
+		sub := stream.NewSotwSubscription(req.GetResourceNames(), true)
+		_, err := c.CreateWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should only receive explicitly requested resource "a", not all resources
+		resp := verifyResponse(t, w, "", 1)
+		resources := resp.GetReturnedResources()
+		assert.Contains(t, resources, "a")
+		assert.NotContains(t, resources, "b")
+		assert.NotContains(t, resources, "c")
+	})
+
+	t.Run("legacy wildcard ignored", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add resources
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+
+		// Empty request (legacy wildcard with allowLegacyWildcard=true)
+		w := make(chan Response, 1)
+		req := &Request{ResourceNames: []string{}, TypeUrl: testType}
+		sub := stream.NewSotwSubscription(req.GetResourceNames(), true) // allowLegacyWildcard=true
+		_, err := c.CreateWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should receive empty response (wildcard ignored)
+		resp := verifyResponse(t, w, "", 0)
+		assert.Empty(t, resp.GetReturnedResources())
+	})
+
+	t.Run("wildcard not ignored without option", func(t *testing.T) {
+		// Create cache WITHOUT wildcard ignore
+		c := NewLinearCache(testType)
+
+		// Add resources
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+
+		// Wildcard request
+		w := make(chan Response, 1)
+		req := &Request{ResourceNames: []string{"*"}, TypeUrl: testType}
+		sub := stream.NewSotwSubscription(req.GetResourceNames(), true)
+		_, err := c.CreateWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should receive all resources (wildcard honored)
+		resp := verifyResponse(t, w, "", 2)
+		resources := resp.GetReturnedResources()
+		assert.Contains(t, resources, "a")
+		assert.Contains(t, resources, "b")
+	})
+
+	t.Run("explicit subscriptions unaffected", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add resources
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+
+		// Explicit resource request (no wildcard)
+		w := make(chan Response, 1)
+		req := &Request{ResourceNames: []string{"a", "b"}, TypeUrl: testType}
+		sub := stream.NewSotwSubscription(req.GetResourceNames(), true)
+		_, err := c.CreateWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should receive requested resources normally
+		resp := verifyResponse(t, w, "", 2)
+		resources := resp.GetReturnedResources()
+		assert.Contains(t, resources, "a")
+		assert.Contains(t, resources, "b")
+	})
+
+	t.Run("delta explicit wildcard ignored", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add resources
+		require.NoError(t, c.UpdateResource("a", testResource("a")))
+		require.NoError(t, c.UpdateResource("b", testResource("b")))
+
+		// Delta request with wildcard
+		w := make(chan DeltaResponse, 1)
+		req := &DeltaRequest{
+			ResourceNamesSubscribe: []string{"*"},
+			TypeUrl:                testType,
+		}
+		sub := stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), nil, nil, true)
+		cancelWatch, err := c.CreateDeltaWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// With wildcard ignored, should block waiting for resources
+		// (no initial response for non-wildcard subscriptions with no resources in delta)
+		mustBlockDelta(t, w)
+
+		// Cleanup
+		if cancelWatch != nil {
+			cancelWatch()
+		}
+	})
+
+	t.Run("delta mixed subscription filtered", func(t *testing.T) {
+		// Create cache with wildcard ignore enabled
+		c := NewLinearCache(testType, WithIgnoreWildcardForType(testType))
+
+		// Add resources
+		a := &endpoint.ClusterLoadAssignment{ClusterName: "a"}
+		hashA := hashResource(t, a)
+		require.NoError(t, c.UpdateResource("a", a))
+		b := &endpoint.ClusterLoadAssignment{ClusterName: "b"}
+		require.NoError(t, c.UpdateResource("b", b))
+		c1 := &endpoint.ClusterLoadAssignment{ClusterName: "c"}
+		require.NoError(t, c.UpdateResource("c", c1))
+
+		// Delta request with both wildcard and explicit resource
+		w := make(chan DeltaResponse, 1)
+		req := &DeltaRequest{
+			ResourceNamesSubscribe: []string{"*", "a"},
+			TypeUrl:                testType,
+		}
+		sub := stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), nil, nil, true)
+		_, err := c.CreateDeltaWatch(req, sub, w)
+		require.NoError(t, err)
+
+		// Should only receive explicitly requested resource "a"
+		resp := verifyDeltaResponse(t, w, []resourceInfo{{name: "a", version: hashA}}, nil)
+		resources := resp.GetReturnedResources()
+		assert.Contains(t, resources, "a")
+		assert.NotContains(t, resources, "b")
+		assert.NotContains(t, resources, "c")
+	})
+}
