@@ -89,6 +89,11 @@ type LinearCache struct {
 
 	log log.Logger
 
+	// ignoreWildcardTypes contains type URLs for which wildcards are ignored.
+	// This is a workaround for clients that incorrectly send wildcard requests
+	// for certain resource types.
+	ignoreWildcardTypes map[string]struct{}
+
 	mu sync.RWMutex
 }
 
@@ -118,6 +123,19 @@ func WithInitialResources(resources map[string]types.Resource) LinearCacheOption
 func WithLogger(log log.Logger) LinearCacheOption {
 	return func(cache *LinearCache) {
 		cache.log = log
+	}
+}
+
+// WithIgnoreWildcardForType configures the cache to ignore wildcards for the
+// specified type URL. This is useful as a workaround for clients that incorrectly
+// send wildcard requests for certain resource types (e.g., VHDS).
+// This function can be called multiple times to ignore wildcards for multiple types.
+func WithIgnoreWildcardForType(typeURL string) LinearCacheOption {
+	return func(cache *LinearCache) {
+		if cache.ignoreWildcardTypes == nil {
+			cache.ignoreWildcardTypes = make(map[string]struct{})
+		}
+		cache.ignoreWildcardTypes[typeURL] = struct{}{}
 	}
 }
 
@@ -568,6 +586,17 @@ func (cache *LinearCache) GetResources() map[string]types.Resource {
 	return resources
 }
 
+// wildcardIgnoringSubscription wraps a Subscription and overrides IsWildcard()
+// to return false, effectively ignoring the wildcard.
+// This preserves any explicit resource subscriptions that may have been sent alongside "*".
+type wildcardIgnoringSubscription struct {
+	Subscription
+}
+
+func (w *wildcardIgnoringSubscription) IsWildcard() bool {
+	return false
+}
+
 // The implementations of sotw and delta watches handling is nearly identical. The main distinctions are:
 //   - handling of version in sotw when the request is the first of a subscription. Delta has a proper handling based on the request providing known versions.
 //   - building the initial resource versions in delta if they've not been computed yet.
@@ -575,6 +604,13 @@ func (cache *LinearCache) GetResources() map[string]types.Resource {
 func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value chan Response) (func(), error) {
 	if request.GetTypeUrl() != cache.typeURL {
 		return nil, fmt.Errorf("request type %s does not match cache type %s", request.GetTypeUrl(), cache.typeURL)
+	}
+
+	// Check if we should ignore wildcard for this type.
+	// This filters both explicit wildcards ("*") and legacy wildcards (empty requests).
+	if sub.IsWildcard() && cache.shouldIgnoreWildcard() {
+		cache.log.Infof("[linear cache] ignoring wildcard for type %s", cache.typeURL)
+		sub = &wildcardIgnoringSubscription{Subscription: sub}
 	}
 
 	// If the request does not include a version the client considers it has no current state.
@@ -625,6 +661,13 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 		return nil, fmt.Errorf("request type %s does not match cache type %s", request.GetTypeUrl(), cache.typeURL)
 	}
 
+	// Check if we should ignore wildcard for this type.
+	// This filters both explicit wildcards ("*") and legacy wildcards (empty requests).
+	if sub.IsWildcard() && cache.shouldIgnoreWildcard() {
+		cache.log.Infof("[linear cache] ignoring wildcard for type %s", cache.typeURL)
+		sub = &wildcardIgnoringSubscription{Subscription: sub}
+	}
+
 	watch := DeltaResponseWatch{Request: request, Response: value, subscription: sub}
 
 	// On first request on a wildcard subscription, envoy does expect a response to come in to
@@ -646,6 +689,15 @@ func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscripti
 	}
 
 	return cache.trackWatch(watch), nil
+}
+
+// shouldIgnoreWildcard checks if wildcard subscriptions should be ignored for this cache's type.
+func (cache *LinearCache) shouldIgnoreWildcard() bool {
+	if cache.ignoreWildcardTypes == nil {
+		return false
+	}
+	_, ignore := cache.ignoreWildcardTypes[cache.typeURL]
+	return ignore
 }
 
 func (cache *LinearCache) nextWatchID() uint64 {
