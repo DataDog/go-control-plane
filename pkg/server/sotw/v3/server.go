@@ -92,6 +92,13 @@ func DeactivateLegacyWildcardForTypes(types []string) config.XDSOption {
 	return config.DeactivateLegacyWildcardForTypes(types)
 }
 
+// IgnoreWildcardForTypes filters out explicit wildcard ("*") subscriptions for specific resource types.
+// Envoy sometimes sends wildcard requests for types like VHDS even though they don't support it.
+// Also deactivates legacy wildcard for these types to maintain consistent behavior.
+func IgnoreWildcardForTypes(types []string) config.XDSOption {
+	return config.IgnoreWildcardForTypes(types)
+}
+
 type server struct {
 	cache     cache.ConfigWatcher
 	callbacks Callbacks
@@ -102,6 +109,21 @@ type server struct {
 
 	// Local configuration flags for individual xDS implementations.
 	opts config.Opts
+}
+
+func (s *server) filterWildcard(typeURL string, resources []string) []string {
+	if !s.opts.ShouldIgnoreWildcard(typeURL) {
+		return resources
+	}
+
+	// Strip out any wildcard subscriptions since this type doesn't support them
+	filtered := make([]string, 0, len(resources))
+	for _, r := range resources {
+		if r != "*" {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 // streamWrapper abstracts critical data passed around a stream for to be accessed

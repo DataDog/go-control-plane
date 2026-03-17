@@ -104,10 +104,10 @@ func (s *server) processADS(sw *streamWrapper, reqCh chan *discovery.DiscoveryRe
 				}
 
 				subscription = w.sub
-				subscription.SetResourceSubscription(req.GetResourceNames())
+				subscription.SetResourceSubscription(s.filterWildcard(typeURL, req.GetResourceNames()))
 			} else {
 				s.opts.Logger.Debugf("[sotw ads] New subscription for type %s and stream %d", typeURL, sw.ID)
-				subscription = stream.NewSotwSubscription(req.GetResourceNames(), s.opts.IsLegacyWildcardActive(typeURL))
+				subscription = stream.NewSotwSubscription(s.filterWildcard(typeURL, req.GetResourceNames()), s.opts.IsLegacyWildcardActive(typeURL))
 			}
 
 			cancel, err := s.cache.CreateWatch(req, subscription, respChan)
