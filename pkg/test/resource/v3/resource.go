@@ -735,7 +735,7 @@ func (ts *TestSnapshot) getPath() string {
 }
 
 // Generate produces a snapshot from the parameters.
-func (ts *TestSnapshot) Generate() *cache.Snapshot {
+func (ts *TestSnapshot) Generate() *cache.Snapshot { //nolint:staticcheck // test helper uses deprecated API
 	ts.currentPort = ts.BasePort
 
 	clusters := make([]types.Resource, ts.NumClusters)
@@ -779,7 +779,7 @@ func (ts *TestSnapshot) Generate() *cache.Snapshot {
 		extensions[i] = MakeExtensionConfig(Ads, extensionConfigName, routeName)
 	}
 
-	out, _ := cache.NewSnapshot(ts.Version, map[resource.Type][]types.Resource{
+	out, _ := cache.NewSnapshot(ts.Version, map[resource.Type][]types.Resource{ //nolint:staticcheck // test helper uses deprecated API
 		resource.EndpointType:        endpoints,
 		resource.ClusterType:         clusters,
 		resource.RouteType:           routes,

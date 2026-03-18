@@ -72,7 +72,7 @@ func testInitialFetch(ctx context.Context, snapCache cache.SnapshotCache, c clie
 			require.NoError(t, err)
 		})
 
-		snapshot, err := cache.NewSnapshot("1", map[resource.Type][]types.Resource{
+		snapshot, err := cache.NewSnapshot("1", map[resource.Type][]types.Resource{ //nolint:staticcheck // test code uses deprecated API
 			resource.ClusterType: {
 				&clusterv3.Cluster{Name: "cluster_1"},
 				&clusterv3.Cluster{Name: "cluster_2"},
@@ -109,7 +109,7 @@ func testNextFetch(ctx context.Context, snapCache cache.SnapshotCache, c client.
 			require.NoError(t, err)
 		})
 
-		snapshot, err := cache.NewSnapshot("2", map[resource.Type][]types.Resource{
+		snapshot, err := cache.NewSnapshot("2", map[resource.Type][]types.Resource{ //nolint:staticcheck // test code uses deprecated API
 			resource.ClusterType: {
 				&clusterv3.Cluster{Name: "cluster_2"},
 				&clusterv3.Cluster{Name: "cluster_4"},
