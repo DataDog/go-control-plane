@@ -156,6 +156,7 @@ func TestDeltaResource(t *testing.T) {
 		defaultResourceVersion := hashResource(anySerialized.Value)
 
 		validate := func(tb testing.TB, serialized *discovery.Resource, expectedVersion string) {
+			tb.Helper()
 			assert.Equal(tb, c.Name, serialized.Name)
 			if expectedVersion != "" {
 				assert.Equal(tb, expectedVersion, serialized.Version)

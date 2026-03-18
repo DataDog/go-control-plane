@@ -168,8 +168,8 @@ func makeConfigSource() *core.ConfigSource {
 	return source
 }
 
-func GenerateSnapshot() *cache.Snapshot {
-	snap, _ := cache.NewSnapshot("1",
+func GenerateSnapshot() *cache.Snapshot { //nolint:staticcheck // example code uses deprecated API for backwards compatibility
+	snap, _ := cache.NewSnapshot("1", //nolint:staticcheck // example code uses deprecated API for backwards compatibility
 		map[resource.Type][]types.Resource{
 			resource.ClusterType:  {makeCluster(ClusterName)},
 			resource.RouteType:    {makeRoute(RouteName, ClusterName)},
