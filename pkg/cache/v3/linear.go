@@ -131,7 +131,6 @@ func WithLogger(log log.Logger) LinearCacheOption {
 // send wildcard requests for certain resource types (e.g., VHDS).
 // This function can be called multiple times to ignore wildcards for multiple types.
 func WithIgnoreWildcardForType(typeURL string) LinearCacheOption {
-	fmt.Printf("ZHIYAN IGNORE WILDCARD ENABLED\n")
 	return func(cache *LinearCache) {
 		if cache.ignoreWildcardTypes == nil {
 			cache.ignoreWildcardTypes = make(map[string]struct{})
