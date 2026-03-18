@@ -645,14 +645,12 @@ func TestDeltaIgnoreWildcardForTypes(t *testing.T) {
 			assert.Equal(t, rsrc.VirtualHostType, response.GetTypeUrl())
 			if len(expectedResources) == 0 {
 				assert.Empty(t, response.GetResources(), "Expected no resources when wildcard is filtered")
-			} else {
-				if assert.Len(t, response.GetResources(), len(expectedResources)) {
-					var names []string
-					for _, resource := range response.GetResources() {
-						names = append(names, resource.GetName())
-					}
-					assert.ElementsMatch(t, names, expectedResources)
+			} else if assert.Len(t, response.GetResources(), len(expectedResources)) {
+				var names []string
+				for _, resource := range response.GetResources() {
+					names = append(names, resource.GetName())
 				}
+				assert.ElementsMatch(t, names, expectedResources)
 			}
 		case <-time.After(1 * time.Second):
 			if len(expectedResources) == 0 {
