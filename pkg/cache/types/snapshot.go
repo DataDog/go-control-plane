@@ -1,4 +1,4 @@
-package types //nolint:revive // var-naming: avoid meaningless package names
+package types
 
 import (
 	"fmt"
@@ -49,7 +49,7 @@ func (r *SnapshotResource) AsCachedResource(cacheVersion string) *internal.Cache
 // From anypb code.
 const urlPrefix = "type.googleapis.com/"
 
-// TypeURL returns the type of the included resources
+// TypeURL returns the type of the included resources.
 func (r *SnapshotResource) TypeURL() string {
 	if r.Serialized != nil {
 		return r.Serialized.GetTypeUrl()
