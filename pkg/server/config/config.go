@@ -15,6 +15,10 @@ type Opts struct {
 
 	// Deactivate legacy wildcard mode for specific resource types
 	legacyWildcardDeactivatedTypes map[string]struct{}
+
+	// Some clients (like Envoy) erroneously send wildcard subscriptions for resource types
+	// that shouldn't make wildcard requests like VHDS. This map tracks which types should have wildcards filtered out.
+	ignoreWildcardTypes map[string]struct{}
 }
 
 func NewOpts() Opts {
@@ -36,6 +40,15 @@ func (o Opts) IsLegacyWildcardActive(typeURL string) bool {
 		}
 	}
 	return true
+}
+
+func (o Opts) ShouldIgnoreWildcard(typeURL string) bool {
+	if len(o.ignoreWildcardTypes) > 0 {
+		if _, found := o.ignoreWildcardTypes[typeURL]; found {
+			return true
+		}
+	}
+	return false
 }
 
 // Each xDS implementation should implement their own functional opts.
@@ -62,5 +75,24 @@ func DeactivateLegacyWildcardForTypes(types []string) XDSOption {
 			typeMap[t] = struct{}{}
 		}
 		o.legacyWildcardDeactivatedTypes = typeMap
+	}
+}
+
+func IgnoreWildcardForTypes(types []string) XDSOption {
+	return func(o *Opts) {
+		typeMap := make(map[string]struct{}, len(types))
+		for _, t := range types {
+			typeMap[t] = struct{}{}
+		}
+		o.ignoreWildcardTypes = typeMap
+
+		// If we're filtering explicit wildcards, we should also disable legacy wildcard behavior
+		// to be consistent - otherwise we'd filter "*" but still treat empty requests as wildcards
+		if o.legacyWildcardDeactivatedTypes == nil {
+			o.legacyWildcardDeactivatedTypes = make(map[string]struct{}, len(types))
+		}
+		for _, t := range types {
+			o.legacyWildcardDeactivatedTypes[t] = struct{}{}
+		}
 	}
 }
