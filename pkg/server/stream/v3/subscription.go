@@ -18,6 +18,10 @@ type Subscription struct {
 	// this flag will be set to false
 	allowLegacyWildcard bool
 
+	// ignoreExplicitWildcard indicates that explicit wildcard ("*") subscriptions
+	// should be filtered out for this subscription type.
+	ignoreExplicitWildcard bool
+
 	// subscribedResourceNames provides the resources explicitly requested by the client.
 	// Prefix glob subscriptions (e.g. "collection/*") are stored separately in subscribedPrefixes.
 	// This list might be non-empty even when set as wildcard.
@@ -32,7 +36,7 @@ type Subscription struct {
 }
 
 // newSubscription initializes a subscription state.
-func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVersions map[string]string) Subscription {
+func newSubscription(emptyRequest, allowLegacyWildcard, ignoreExplicitWildcard bool, initialResourceVersions map[string]string) Subscription {
 	// By default we set the subscription as a wildcard only if the request was empty
 	// and in legacy mode. Later on, outside of this constructor, when we actually
 	// process the request, if the request was non-empty, it may have an
@@ -43,6 +47,7 @@ func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVers
 	state := Subscription{
 		wildcard:                wildcard,
 		allowLegacyWildcard:     allowLegacyWildcard,
+		ignoreExplicitWildcard:  ignoreExplicitWildcard,
 		subscribedResourceNames: map[string]struct{}{},
 		subscribedPrefixes:      map[string]struct{}{},
 		returnedResources:       initialResourceVersions,
@@ -55,8 +60,8 @@ func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVers
 	return state
 }
 
-func NewSotwSubscription(subscribed []string, allowLegacyWildcard bool) Subscription {
-	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, nil)
+func NewSotwSubscription(subscribed []string, allowLegacyWildcard, ignoreExplicitWildcard bool) Subscription {
+	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, ignoreExplicitWildcard, nil)
 	sub.SetResourceSubscription(subscribed)
 	return sub
 }
@@ -67,6 +72,16 @@ func NewSotwSubscription(subscribed []string, allowLegacyWildcard bool) Subscrip
 // Behavior is based on
 // https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#how-the-client-specifies-what-resources-to-return
 func (s *Subscription) SetResourceSubscription(subscribed []string) {
+	// Filter out explicit wildcards if requested
+	if s.ignoreExplicitWildcard {
+		filtered := make([]string, 0, len(subscribed))
+		for _, r := range subscribed {
+			if r != explicitWildcard {
+				filtered = append(filtered, r)
+			}
+		}
+		subscribed = filtered
+	}
 	if s.allowLegacyWildcard {
 		if len(subscribed) == 0 {
 			// We were wildcard based on legacy behavior and still don't request any resource
@@ -115,8 +130,8 @@ func (s *Subscription) SetResourceSubscription(subscribed []string) {
 	s.subscribedPrefixes = subscribedPrefixes
 }
 
-func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, allowLegacyWildcard bool) Subscription {
-	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, initialResourceVersions)
+func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, allowLegacyWildcard, ignoreExplicitWildcard bool) Subscription {
+	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, ignoreExplicitWildcard, initialResourceVersions)
 	sub.UpdateResourceSubscriptions(subscribed, unsubscribed)
 	return sub
 }
@@ -125,6 +140,24 @@ func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVers
 // based on newly subscribed or unsubscribed resources
 // Used in delta subscriptions.
 func (s *Subscription) UpdateResourceSubscriptions(subscribed, unsubscribed []string) {
+	// Filter out explicit wildcards if requested
+	if s.ignoreExplicitWildcard {
+		filteredSub := make([]string, 0, len(subscribed))
+		for _, r := range subscribed {
+			if r != explicitWildcard {
+				filteredSub = append(filteredSub, r)
+			}
+		}
+		subscribed = filteredSub
+
+		filteredUnsub := make([]string, 0, len(unsubscribed))
+		for _, r := range unsubscribed {
+			if r != explicitWildcard {
+				filteredUnsub = append(filteredUnsub, r)
+			}
+		}
+		unsubscribed = filteredUnsub
+	}
 	// Handles legacy wildcard behavior first to exit if we are still in this behavior
 	if s.allowLegacyWildcard {
 		// The protocol (as of v1.36.0) only references subscribed as triggering

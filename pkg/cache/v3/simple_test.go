@@ -54,7 +54,7 @@ func (group) ID(node *core.Node) string {
 }
 
 func subFromRequest(req *cache.Request) stream.Subscription {
-	return stream.NewSotwSubscription(req.GetResourceNames(), true)
+	return stream.NewSotwSubscription(req.GetResourceNames(), true, false)
 }
 
 // This method represents the expected behavior of client and servers regarding the request and the subscription.
@@ -646,7 +646,7 @@ func TestAvertPanicForWatchOnNonExistentSnapshot(t *testing.T) {
 		ResourceNames: []string{"rtds"},
 		TypeUrl:       rsrc.RuntimeType,
 	}
-	ss := stream.NewSotwSubscription([]string{"rtds"}, true)
+	ss := stream.NewSotwSubscription([]string{"rtds"}, true, false)
 	ss.SetReturnedResources(map[string]string{"cluster": "abcdef"})
 	responder := make(chan cache.Response)
 	_, err := c.CreateWatch(req, ss, responder)
@@ -689,7 +689,7 @@ func TestSotwSnapshotCacheWithODCDS(t *testing.T) {
 	t.Run("wildcard subscription only returns wildcard resources", func(t *testing.T) {
 		value := make(chan cache.Response, 1)
 		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"*"}}
-		sub := stream.NewSotwSubscription([]string{"*"}, false)
+		sub := stream.NewSotwSubscription([]string{"*"}, false, false)
 		_, err := c.CreateWatch(req, sub, value)
 		require.NoError(t, err)
 
@@ -706,7 +706,7 @@ func TestSotwSnapshotCacheWithODCDS(t *testing.T) {
 	t.Run("ODCDS: wildcard + explicit returns union", func(t *testing.T) {
 		value := make(chan cache.Response, 1)
 		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"*", "on-demand-cluster"}}
-		sub := stream.NewSotwSubscription([]string{"*", "on-demand-cluster"}, false)
+		sub := stream.NewSotwSubscription([]string{"*", "on-demand-cluster"}, false, false)
 		_, err := c.CreateWatch(req, sub, value)
 		require.NoError(t, err)
 
@@ -724,7 +724,7 @@ func TestSotwSnapshotCacheWithODCDS(t *testing.T) {
 	t.Run("explicit only returns requested resource", func(t *testing.T) {
 		value := make(chan cache.Response, 1)
 		req := &discovery.DiscoveryRequest{TypeUrl: rsrc.ClusterType, ResourceNames: []string{"on-demand-cluster2"}}
-		sub := stream.NewSotwSubscription([]string{"on-demand-cluster2"}, false)
+		sub := stream.NewSotwSubscription([]string{"on-demand-cluster2"}, false, false)
 		_, err := c.CreateWatch(req, sub, value)
 		require.NoError(t, err)
 
@@ -764,7 +764,7 @@ func TestSnapshotCacheDeltaWithODCDS(t *testing.T) {
 			ResourceNamesSubscribe: []string{"*"},
 			Node:                   &core.Node{Id: key},
 		}
-		sub := stream.NewDeltaSubscription([]string{"*"}, nil, nil, false)
+		sub := stream.NewDeltaSubscription([]string{"*"}, nil, nil, false, false)
 		_, err := c.CreateDeltaWatch(req, sub, value)
 		require.NoError(t, err)
 
@@ -785,7 +785,7 @@ func TestSnapshotCacheDeltaWithODCDS(t *testing.T) {
 			ResourceNamesSubscribe: []string{"*", "on-demand-cluster"},
 			Node:                   &core.Node{Id: key},
 		}
-		sub := stream.NewDeltaSubscription([]string{"*", "on-demand-cluster"}, nil, nil, false)
+		sub := stream.NewDeltaSubscription([]string{"*", "on-demand-cluster"}, nil, nil, false, false)
 		_, err := c.CreateDeltaWatch(req, sub, value)
 		require.NoError(t, err)
 

@@ -204,7 +204,7 @@ func hashResource(t *testing.T, resource types.Resource) string {
 
 func createWildcardDeltaWatch(t *testing.T, initialReq bool, c *LinearCache, w chan DeltaResponse) {
 	t.Helper()
-	sub := stream.NewDeltaSubscription(nil, nil, nil, true)
+	sub := stream.NewDeltaSubscription(nil, nil, nil, true, false)
 	req := &DeltaRequest{TypeUrl: testType}
 	if !initialReq {
 		req.ResponseNonce = "1"
@@ -218,7 +218,7 @@ func createWildcardDeltaWatch(t *testing.T, initialReq bool, c *LinearCache, w c
 }
 
 func subFromRequest(req *Request) stream.Subscription {
-	return stream.NewSotwSubscription(req.GetResourceNames(), true)
+	return stream.NewSotwSubscription(req.GetResourceNames(), true, false)
 }
 
 // This method represents the expected behavior of client and servers regarding the request and the subscription.
@@ -231,7 +231,7 @@ func updateFromSotwResponse(resp Response, sub *stream.Subscription, req *Reques
 }
 
 func subFromDeltaRequest(req *DeltaRequest) stream.Subscription {
-	return stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), true)
+	return stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), true, false)
 }
 
 func TestLinearInitialResources(t *testing.T) {
@@ -1630,7 +1630,7 @@ func TestLinearDeltaPrefixSubscription(t *testing.T) {
 }
 
 func TestIsSubscribedTo(t *testing.T) {
-	sub := stream.NewDeltaSubscription([]string{"col/zone1/*", "exact-resource"}, nil, nil, false)
+	sub := stream.NewDeltaSubscription([]string{"col/zone1/*", "exact-resource"}, nil, nil, false, false)
 
 	assert.True(t, isSubscribedTo(sub, "col/zone1/10.0.0.1"))
 	assert.True(t, isSubscribedTo(sub, "col/zone1/10.0.0.2"))
@@ -1640,7 +1640,7 @@ func TestIsSubscribedTo(t *testing.T) {
 	assert.False(t, isSubscribedTo(sub, "unknown"))
 
 	// No prefix subscriptions → pure O(1) map lookup path
-	subExact := stream.NewDeltaSubscription([]string{"a", "b"}, nil, nil, false)
+	subExact := stream.NewDeltaSubscription([]string{"a", "b"}, nil, nil, false, false)
 	assert.True(t, isSubscribedTo(subExact, "a"))
 	assert.False(t, isSubscribedTo(subExact, "c"))
 	assert.Empty(t, subExact.SubscribedPrefixes())
