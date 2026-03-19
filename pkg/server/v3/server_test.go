@@ -109,8 +109,8 @@ func (stream *mockStream) Send(resp *discovery.DiscoveryResponse) error {
 	assert.Equal(stream.t, resp.GetNonce(), strconv.Itoa(stream.nonce))
 	// check that version is set
 	assert.NotEmpty(stream.t, resp.GetVersionInfo())
-	// check resources are non-empty
-	assert.NotEmpty(stream.t, resp.GetResources())
+	// Note: Empty responses are valid in the SOTW protocol (e.g., for empty subscriptions)
+	// so we don't check that resources are non-empty here
 	// check that type URL matches in resources
 	assert.NotEmpty(stream.t, resp.GetTypeUrl())
 
@@ -696,4 +696,176 @@ func TestCallbackError(t *testing.T) {
 			close(resp.recv)
 		})
 	}
+}
+
+func TestSotwIgnoreWildcardForTypes(t *testing.T) {
+	vhost0 := resource.MakeVirtualHost("vhost0", "cluster0")
+	vhost1 := resource.MakeVirtualHost("vhost1", "cluster1")
+	vhost2 := resource.MakeVirtualHost("vhost2", "cluster2")
+
+	t.Run("wildcard filtered - multiple explicit resources", func(t *testing.T) {
+		config := makeMockConfigWatcher()
+		config.responses = map[string][]cache.Response{
+			rsrc.VirtualHostType: {
+				cache.NewTestRawResponse(
+					&discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+					"1",
+					[]types.ResourceWithTTL{{Resource: vhost0}, {Resource: vhost1}, {Resource: vhost2}},
+				),
+			},
+		}
+
+		resp := makeMockStream(t)
+		defer close(resp.recv)
+
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			sotw.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.StreamAggregatedResources(resp)
+			require.NoError(t, err)
+		}()
+
+		// Send request with wildcard and multiple explicit resources
+		// Wildcard should be filtered, only explicit resources subscribed
+		resp.recv <- &discovery.DiscoveryRequest{
+			Node:          node,
+			TypeUrl:       rsrc.VirtualHostType,
+			ResourceNames: []string{"*", "vhost0", "vhost1"},
+		}
+
+		select {
+		case response := <-resp.sent:
+			assert.Equal(t, rsrc.VirtualHostType, response.GetTypeUrl())
+			// The cache response has 3 resources, but subscription should only request vhost0 and vhost1
+			assert.NotEmpty(t, response.GetResources())
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+
+	t.Run("wildcard not filtered for other types", func(t *testing.T) {
+		endpoint0 := resource.MakeEndpoint("cluster0", 8080)
+		endpoint1 := resource.MakeEndpoint("cluster1", 8080)
+
+		config := makeMockConfigWatcher()
+		config.responses = map[string][]cache.Response{
+			rsrc.EndpointType: {
+				cache.NewTestRawResponse(
+					&discovery.DiscoveryRequest{TypeUrl: rsrc.EndpointType},
+					"1",
+					[]types.ResourceWithTTL{{Resource: endpoint0}, {Resource: endpoint1}},
+				),
+			},
+		}
+
+		resp := makeMockStream(t)
+		defer close(resp.recv)
+
+		// Ignore wildcard only for VirtualHost, not Endpoints
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			sotw.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.StreamEndpoints(resp)
+			require.NoError(t, err)
+		}()
+
+		// Request endpoints with wildcard - should work normally
+		resp.recv <- &discovery.DiscoveryRequest{
+			Node:          node,
+			TypeUrl:       rsrc.EndpointType,
+			ResourceNames: []string{"*"},
+		}
+
+		select {
+		case response := <-resp.sent:
+			assert.Equal(t, rsrc.EndpointType, response.GetTypeUrl())
+			assert.NotEmpty(t, response.GetResources())
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for response")
+		}
+	})
+
+	t.Run("legacy wildcard deactivated - explicit resource still works", func(t *testing.T) {
+		config := makeMockConfigWatcher()
+		config.responses = map[string][]cache.Response{
+			rsrc.VirtualHostType: {
+				// First response: empty for empty subscription
+				cache.NewTestRawResponse(
+					&discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+					"1",
+					[]types.ResourceWithTTL{},
+				),
+				// Second response: vhost2 for explicit subscription
+				cache.NewTestRawResponse(
+					&discovery.DiscoveryRequest{TypeUrl: rsrc.VirtualHostType},
+					"2",
+					[]types.ResourceWithTTL{{Resource: vhost2}},
+				),
+			},
+		}
+
+		resp := makeMockStream(t)
+		defer close(resp.recv)
+
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			sotw.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.StreamAggregatedResources(resp)
+			require.NoError(t, err)
+		}()
+
+		// Start with an empty request - no resources subscribed
+		// This ensures we're not in legacy wildcard mode
+		resp.recv <- &discovery.DiscoveryRequest{
+			Node:          node,
+			TypeUrl:       rsrc.VirtualHostType,
+			ResourceNames: []string{},
+		}
+
+		// Server should respond with an empty response for empty subscription
+		var firstResponse *discovery.DiscoveryResponse
+		select {
+		case firstResponse = <-resp.sent:
+			assert.Equal(t, rsrc.VirtualHostType, firstResponse.GetTypeUrl())
+			assert.Empty(t, firstResponse.GetResources(), "Expected empty response for empty subscription")
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for first response")
+		}
+
+		// Now send a request with an explicit resource
+		// With IgnoreWildcardForTypes, explicit resource requests should still work
+		resp.recv <- &discovery.DiscoveryRequest{
+			Node:          node,
+			TypeUrl:       rsrc.VirtualHostType,
+			ResourceNames: []string{"vhost2"},
+			VersionInfo:   firstResponse.GetVersionInfo(), // ACK the previous response
+			ResponseNonce: firstResponse.GetNonce(),
+		}
+
+		// This should trigger a response for just that resource
+		select {
+		case response := <-resp.sent:
+			assert.Equal(t, rsrc.VirtualHostType, response.GetTypeUrl())
+			assert.Len(t, response.GetResources(), 1)
+			// Verify it's vhost2
+			assert.Contains(t, response.GetResources()[0].GetTypeUrl(), "VirtualHost")
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for second response")
+		}
+	})
 }
