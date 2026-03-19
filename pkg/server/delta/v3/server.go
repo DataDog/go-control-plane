@@ -75,6 +75,13 @@ func DeactivateLegacyWildcardForTypes(types []string) config.XDSOption {
 	return config.DeactivateLegacyWildcardForTypes(types)
 }
 
+// IgnoreWildcardForTypes filters out explicit wildcard ("*") subscriptions for specific resource types.
+// Envoy sometimes sends wildcard requests for types like VHDS even though they don't support it.
+// Also deactivates legacy wildcard for these types to maintain consistent behavior.
+func IgnoreWildcardForTypes(types []string) config.XDSOption {
+	return config.IgnoreWildcardForTypes(types)
+}
+
 // NewServer creates a delta xDS specific server which utilizes a ConfigWatcher and delta Callbacks.
 func NewServer(ctx context.Context, config cache.ConfigWatcher, callbacks Callbacks, opts ...config.XDSOption) Server {
 	s := &server{
@@ -236,7 +243,7 @@ func (s *server) processDelta(str stream.DeltaStream, reqCh <-chan *discovery.De
 				// We also set the subscription as wildcard based on its legacy meaning (no resource name sent in resource_names_subscribe).
 				// If the subscription starts with this legacy mode, adding new resources will not unsubscribe from wildcard.
 				// It can still be done by explicitly unsubscribing from "*"
-				watch.subscription = stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), s.opts.IsLegacyWildcardActive(typeURL))
+				watch.subscription = stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), s.opts.IsLegacyWildcardActive(typeURL), s.opts.ShouldIgnoreWildcard(typeURL))
 			} else {
 				watch.Cancel()
 
