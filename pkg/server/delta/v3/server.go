@@ -50,21 +50,6 @@ type server struct {
 	opts config.Opts
 }
 
-func (s *server) filterWildcard(typeURL string, resources []string) []string {
-	if !s.opts.ShouldIgnoreWildcard(typeURL) {
-		return resources
-	}
-
-	// Strip out any wildcard subscriptions since this type doesn't support them
-	filtered := make([]string, 0, len(resources))
-	for _, r := range resources {
-		if r != "*" {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
 // WithLogger configures the server logger. Defaults to no logging.
 func WithLogger(logger log.Logger) config.XDSOption {
 	return func(o *config.Opts) {

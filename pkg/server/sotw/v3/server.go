@@ -111,21 +111,6 @@ type server struct {
 	opts config.Opts
 }
 
-func (s *server) filterWildcard(typeURL string, resources []string) []string {
-	if !s.opts.ShouldIgnoreWildcard(typeURL) {
-		return resources
-	}
-
-	// Strip out any wildcard subscriptions since this type doesn't support them
-	filtered := make([]string, 0, len(resources))
-	for _, r := range resources {
-		if r != "*" {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
 // streamWrapper abstracts critical data passed around a stream for to be accessed
 // through various code paths in the xDS lifecycle. This comes in handy when dealing
 // with varying implementation types such as ordered vs unordered resource handling.
