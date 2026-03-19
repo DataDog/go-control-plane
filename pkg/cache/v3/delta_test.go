@@ -81,7 +81,7 @@ func TestSnapshotCacheDeltaWatch(t *testing.T) {
 		}
 		sub := subscriptions[typ]
 		if len(names[typ]) > 0 {
-			sub.UpdateResourceSubscriptions(names[typ], []string{"*"}, false)
+			sub.UpdateResourceSubscriptions(names[typ], []string{"*"})
 			req.ResourceNamesSubscribe = names[typ]
 			req.ResourceNamesUnsubscribe = []string{"*"}
 		}

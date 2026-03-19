@@ -251,7 +251,6 @@ func (s *server) processDelta(str stream.DeltaStream, reqCh <-chan *discovery.De
 				watch.subscription.UpdateResourceSubscriptions(
 					req.GetResourceNamesSubscribe(),
 					req.GetResourceNamesUnsubscribe(),
-					s.opts.ShouldIgnoreWildcard(typeURL),
 				)
 			}
 

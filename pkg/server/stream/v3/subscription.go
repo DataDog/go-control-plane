@@ -18,6 +18,10 @@ type Subscription struct {
 	// this flag will be set to false
 	allowLegacyWildcard bool
 
+	// ignoreExplicitWildcard indicates that explicit wildcard ("*") subscriptions
+	// should be filtered out for this subscription type.
+	ignoreExplicitWildcard bool
+
 	// subscribedResourceNames provides the resources explicitly requested by the client.
 	// Prefix glob subscriptions (e.g. "collection/*") are stored separately in subscribedPrefixes.
 	// This list might be non-empty even when set as wildcard.
@@ -32,7 +36,7 @@ type Subscription struct {
 }
 
 // newSubscription initializes a subscription state.
-func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVersions map[string]string) Subscription {
+func newSubscription(emptyRequest, allowLegacyWildcard, ignoreExplicitWildcard bool, initialResourceVersions map[string]string) Subscription {
 	// By default we set the subscription as a wildcard only if the request was empty
 	// and in legacy mode. Later on, outside of this constructor, when we actually
 	// process the request, if the request was non-empty, it may have an
@@ -43,6 +47,7 @@ func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVers
 	state := Subscription{
 		wildcard:                wildcard,
 		allowLegacyWildcard:     allowLegacyWildcard,
+		ignoreExplicitWildcard:  ignoreExplicitWildcard,
 		subscribedResourceNames: map[string]struct{}{},
 		subscribedPrefixes:      map[string]struct{}{},
 		returnedResources:       initialResourceVersions,
@@ -56,8 +61,8 @@ func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVers
 }
 
 func NewSotwSubscription(subscribed []string, allowLegacyWildcard, ignoreExplicitWildcard bool) Subscription {
-	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, nil)
-	sub.SetResourceSubscription(subscribed, ignoreExplicitWildcard)
+	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, ignoreExplicitWildcard, nil)
+	sub.SetResourceSubscription(subscribed)
 	return sub
 }
 
@@ -66,9 +71,9 @@ func NewSotwSubscription(subscribed []string, allowLegacyWildcard, ignoreExplici
 // Used in sotw subscriptions
 // Behavior is based on
 // https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#how-the-client-specifies-what-resources-to-return
-func (s *Subscription) SetResourceSubscription(subscribed []string, ignoreExplicitWildcard bool) {
+func (s *Subscription) SetResourceSubscription(subscribed []string) {
 	// Filter out explicit wildcards if requested
-	if ignoreExplicitWildcard {
+	if s.ignoreExplicitWildcard {
 		filtered := make([]string, 0, len(subscribed))
 		for _, r := range subscribed {
 			if r != explicitWildcard {
@@ -126,17 +131,17 @@ func (s *Subscription) SetResourceSubscription(subscribed []string, ignoreExplic
 }
 
 func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, allowLegacyWildcard, ignoreExplicitWildcard bool) Subscription {
-	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, initialResourceVersions)
-	sub.UpdateResourceSubscriptions(subscribed, unsubscribed, ignoreExplicitWildcard)
+	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, ignoreExplicitWildcard, initialResourceVersions)
+	sub.UpdateResourceSubscriptions(subscribed, unsubscribed)
 	return sub
 }
 
 // UpdateResourceSubscriptions updates the subscribed resources (including the wildcard state)
 // based on newly subscribed or unsubscribed resources
 // Used in delta subscriptions.
-func (s *Subscription) UpdateResourceSubscriptions(subscribed, unsubscribed []string, ignoreExplicitWildcard bool) {
+func (s *Subscription) UpdateResourceSubscriptions(subscribed, unsubscribed []string) {
 	// Filter out explicit wildcards if requested
-	if ignoreExplicitWildcard {
+	if s.ignoreExplicitWildcard {
 		filteredSub := make([]string, 0, len(subscribed))
 		for _, r := range subscribed {
 			if r != explicitWildcard {

@@ -538,7 +538,7 @@ func TestLinearCancel(t *testing.T) {
 	checkWatchCount(t, c, "a", 0)
 
 	// cancel watch for "a"
-	sub1.SetResourceSubscription([]string{"a"}, false)
+	sub1.SetResourceSubscription([]string{"a"})
 	req1.ResourceNames = []string{"a"}
 	req1.VersionInfo = "1"
 	cancel, err = c.CreateWatch(req1, sub1, w1)
@@ -997,7 +997,7 @@ func TestLinearSotwWatches(t *testing.T) {
 		// c no longer watched
 		w = make(chan Response, 1)
 		sotwReq.ResourceNames = []string{"a", "b"}
-		sotwSub.SetResourceSubscription(sotwReq.ResourceNames, false)
+		sotwSub.SetResourceSubscription(sotwReq.ResourceNames)
 		_, err = cache.CreateWatch(sotwReq, sotwSub, w)
 		require.NoError(t, err)
 		mustBlock(t, w)
@@ -1017,7 +1017,7 @@ func TestLinearSotwWatches(t *testing.T) {
 
 		w = make(chan Response, 1)
 		sotwReq.ResourceNames = []string{"c"}
-		sotwSub.SetResourceSubscription(sotwReq.ResourceNames, false)
+		sotwSub.SetResourceSubscription(sotwReq.ResourceNames)
 		_, err = cache.CreateWatch(sotwReq, sotwSub, w)
 		require.NoError(t, err)
 		mustBlock(t, w)
@@ -1125,7 +1125,7 @@ func TestLinearSotwNonWildcard(t *testing.T) {
 	updateReqResources := func(index int, res []string) {
 		t.Helper()
 		reqs[index-1].ResourceNames = res
-		subs[index-1].SetResourceSubscription(reqs[index-1].ResourceNames, false)
+		subs[index-1].SetResourceSubscription(reqs[index-1].ResourceNames)
 	}
 
 	createWatchWithCancel := func(index int) func() {
@@ -1538,7 +1538,7 @@ func TestLinearDeltaPrefixSubscription(t *testing.T) {
 		sub.SetReturnedResources(resp.GetNextVersionMap())
 
 		// Unsubscribe from the prefix
-		sub.UpdateResourceSubscriptions(nil, []string{"col/zone1/*"}, false)
+		sub.UpdateResourceSubscriptions(nil, []string{"col/zone1/*"})
 		req.ResponseNonce = "1"
 		_, err = c.CreateDeltaWatch(req, sub, w)
 		require.NoError(t, err)
