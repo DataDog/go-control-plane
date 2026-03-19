@@ -23,6 +23,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	rsrc "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/server/delta/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/test/resource/v3"
 )
@@ -108,10 +109,8 @@ func (stream *mockDeltaStream) Send(resp *discovery.DeltaDiscoveryResponse) erro
 	if resp.GetNonce() != strconv.Itoa(stream.nonce) {
 		stream.t.Errorf("Nonce => got %q, want %d", resp.GetNonce(), stream.nonce)
 	}
-	// Check that resources are non-empty
-	if len(resp.GetResources()) == 0 {
-		stream.t.Error("Resources => got none, want non-empty")
-	}
+	// Note: Empty responses are valid in the delta protocol (e.g., for empty subscriptions)
+	// so we don't check that resources are non-empty here
 	if resp.GetTypeUrl() == "" {
 		stream.t.Error("TypeUrl => got none, want non-empty")
 	}
@@ -626,6 +625,152 @@ func TestDeltaWildcardSubscriptions(t *testing.T) {
 			ResourceNamesUnsubscribe: []string{"endpoints2", "endpoints4"}, // endpoints4 does not exist
 		}
 		validateResponse(t, resp.sent, []string{"endpoints2"}, []string{"endpoints4"})
+	})
+}
+
+func TestDeltaIgnoreWildcardForTypes(t *testing.T) {
+	config := makeMockConfigWatcher()
+	config.deltaResources = map[string]map[string]types.Resource{
+		rsrc.VirtualHostType: {
+			"vhost0": resource.MakeVirtualHost("vhost0", "cluster0"),
+			"vhost1": resource.MakeVirtualHost("vhost1", "cluster1"),
+			"vhost2": resource.MakeVirtualHost("vhost2", "cluster2"),
+		},
+	}
+
+	validateResponse := func(t *testing.T, replies <-chan *discovery.DeltaDiscoveryResponse, expectedResources []string) {
+		t.Helper()
+		select {
+		case response := <-replies:
+			assert.Equal(t, rsrc.VirtualHostType, response.GetTypeUrl())
+			if len(expectedResources) == 0 {
+				assert.Empty(t, response.GetResources(), "Expected no resources when wildcard is filtered")
+			} else if assert.Len(t, response.GetResources(), len(expectedResources)) {
+				var names []string
+				for _, resource := range response.GetResources() {
+					names = append(names, resource.GetName())
+				}
+				assert.ElementsMatch(t, names, expectedResources)
+			}
+		case <-time.After(1 * time.Second):
+			if len(expectedResources) == 0 {
+				// No response is acceptable when no resources are expected
+				return
+			}
+			t.Fatalf("got no response")
+		}
+	}
+
+	t.Run("wildcard filtered - multiple explicit resources", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+		resp := makeMockDeltaStream(t)
+		defer resp.cancel()
+		defer close(resp.recv)
+
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			delta.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			require.NoError(t, err)
+		}()
+
+		// Request with wildcard and multiple explicit resources
+		// Wildcard should be filtered, only explicit resources returned
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.VirtualHostType,
+			ResourceNamesSubscribe: []string{"*", "vhost0", "vhost1"},
+		}
+		validateResponse(t, resp.sent, []string{"vhost0", "vhost1"})
+	})
+
+	t.Run("wildcard not filtered for other types", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+
+		// Add endpoint resources to config
+		config.deltaResources[rsrc.EndpointType] = map[string]types.Resource{
+			"endpoints0": resource.MakeEndpoint("cluster0", 8080),
+			"endpoints1": resource.MakeEndpoint("cluster1", 8080),
+		}
+
+		resp := makeMockDeltaStream(t)
+		defer resp.cancel()
+		defer close(resp.recv)
+
+		// Ignore wildcard only for VirtualHost, not Endpoints
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			delta.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.DeltaEndpoints(resp)
+			require.NoError(t, err)
+		}()
+
+		// Request endpoints with wildcard - should work normally
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.EndpointType,
+			ResourceNamesSubscribe: []string{"*"},
+		}
+
+		select {
+		case response := <-resp.sent:
+			assert.Equal(t, rsrc.EndpointType, response.GetTypeUrl())
+			// Should get all endpoints because wildcard is not filtered for this type
+			assert.Len(t, response.GetResources(), 2)
+		case <-time.After(1 * time.Second):
+			t.Fatal("got no response")
+		}
+	})
+
+	t.Run("legacy wildcard deactivated - explicit resource still works", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+		resp := makeMockDeltaStream(t)
+		defer resp.cancel()
+		defer close(resp.recv)
+
+		s := server.NewServer(
+			context.Background(),
+			config,
+			server.CallbackFuncs{},
+			delta.IgnoreWildcardForTypes([]string{rsrc.VirtualHostType}),
+		)
+
+		go func() {
+			err := s.DeltaAggregatedResources(resp)
+			require.NoError(t, err)
+		}()
+
+		// Start with an empty request - no resources subscribed
+		// This ensures we're not in legacy wildcard mode
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.VirtualHostType,
+			ResourceNamesSubscribe: []string{},
+		}
+
+		// Server should respond with an empty response for empty subscription
+		validateResponse(t, resp.sent, []string{})
+
+		// Now send a request with an explicit resource
+		// With IgnoreWildcardForTypes, explicit resource requests should still work
+		resp.recv <- &discovery.DeltaDiscoveryRequest{
+			Node:                   node,
+			TypeUrl:                rsrc.VirtualHostType,
+			ResourceNamesSubscribe: []string{"vhost2"},
+		}
+
+		// This should trigger a response for just that resource
+		validateResponse(t, resp.sent, []string{"vhost2"})
 	})
 }
 
