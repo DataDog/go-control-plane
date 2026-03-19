@@ -204,7 +204,7 @@ func hashResource(t *testing.T, resource types.Resource) string {
 
 func createWildcardDeltaWatch(t *testing.T, initialReq bool, c *LinearCache, w chan DeltaResponse) {
 	t.Helper()
-	sub := stream.NewDeltaSubscription(nil, nil, nil, true)
+	sub := stream.NewDeltaSubscription(nil, nil, nil, true, false)
 	req := &DeltaRequest{TypeUrl: testType}
 	if !initialReq {
 		req.ResponseNonce = "1"
@@ -218,7 +218,7 @@ func createWildcardDeltaWatch(t *testing.T, initialReq bool, c *LinearCache, w c
 }
 
 func subFromRequest(req *Request) stream.Subscription {
-	return stream.NewSotwSubscription(req.GetResourceNames(), true)
+	return stream.NewSotwSubscription(req.GetResourceNames(), true, false)
 }
 
 // This method represents the expected behavior of client and servers regarding the request and the subscription.
@@ -231,7 +231,7 @@ func updateFromSotwResponse(resp Response, sub *stream.Subscription, req *Reques
 }
 
 func subFromDeltaRequest(req *DeltaRequest) stream.Subscription {
-	return stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), true)
+	return stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), true, false)
 }
 
 func TestLinearInitialResources(t *testing.T) {
@@ -538,7 +538,7 @@ func TestLinearCancel(t *testing.T) {
 	checkWatchCount(t, c, "a", 0)
 
 	// cancel watch for "a"
-	sub1.SetResourceSubscription([]string{"a"})
+	sub1.SetResourceSubscription([]string{"a"}, false)
 	req1.ResourceNames = []string{"a"}
 	req1.VersionInfo = "1"
 	cancel, err = c.CreateWatch(req1, sub1, w1)
@@ -997,7 +997,7 @@ func TestLinearSotwWatches(t *testing.T) {
 		// c no longer watched
 		w = make(chan Response, 1)
 		sotwReq.ResourceNames = []string{"a", "b"}
-		sotwSub.SetResourceSubscription(sotwReq.ResourceNames)
+		sotwSub.SetResourceSubscription(sotwReq.ResourceNames, false)
 		_, err = cache.CreateWatch(sotwReq, sotwSub, w)
 		require.NoError(t, err)
 		mustBlock(t, w)
@@ -1017,7 +1017,7 @@ func TestLinearSotwWatches(t *testing.T) {
 
 		w = make(chan Response, 1)
 		sotwReq.ResourceNames = []string{"c"}
-		sotwSub.SetResourceSubscription(sotwReq.ResourceNames)
+		sotwSub.SetResourceSubscription(sotwReq.ResourceNames, false)
 		_, err = cache.CreateWatch(sotwReq, sotwSub, w)
 		require.NoError(t, err)
 		mustBlock(t, w)
@@ -1125,7 +1125,7 @@ func TestLinearSotwNonWildcard(t *testing.T) {
 	updateReqResources := func(index int, res []string) {
 		t.Helper()
 		reqs[index-1].ResourceNames = res
-		subs[index-1].SetResourceSubscription(reqs[index-1].ResourceNames)
+		subs[index-1].SetResourceSubscription(reqs[index-1].ResourceNames, false)
 	}
 
 	createWatchWithCancel := func(index int) func() {
@@ -1538,7 +1538,7 @@ func TestLinearDeltaPrefixSubscription(t *testing.T) {
 		sub.SetReturnedResources(resp.GetNextVersionMap())
 
 		// Unsubscribe from the prefix
-		sub.UpdateResourceSubscriptions(nil, []string{"col/zone1/*"})
+		sub.UpdateResourceSubscriptions(nil, []string{"col/zone1/*"}, false)
 		req.ResponseNonce = "1"
 		_, err = c.CreateDeltaWatch(req, sub, w)
 		require.NoError(t, err)
@@ -1630,7 +1630,7 @@ func TestLinearDeltaPrefixSubscription(t *testing.T) {
 }
 
 func TestIsSubscribedTo(t *testing.T) {
-	sub := stream.NewDeltaSubscription([]string{"col/zone1/*", "exact-resource"}, nil, nil, false)
+	sub := stream.NewDeltaSubscription([]string{"col/zone1/*", "exact-resource"}, nil, nil, false, false)
 
 	assert.True(t, isSubscribedTo(sub, "col/zone1/10.0.0.1"))
 	assert.True(t, isSubscribedTo(sub, "col/zone1/10.0.0.2"))
@@ -1640,7 +1640,7 @@ func TestIsSubscribedTo(t *testing.T) {
 	assert.False(t, isSubscribedTo(sub, "unknown"))
 
 	// No prefix subscriptions → pure O(1) map lookup path
-	subExact := stream.NewDeltaSubscription([]string{"a", "b"}, nil, nil, false)
+	subExact := stream.NewDeltaSubscription([]string{"a", "b"}, nil, nil, false, false)
 	assert.True(t, isSubscribedTo(subExact, "a"))
 	assert.False(t, isSubscribedTo(subExact, "c"))
 	assert.Empty(t, subExact.SubscribedPrefixes())

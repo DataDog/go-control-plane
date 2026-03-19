@@ -258,14 +258,15 @@ func (s *server) processDelta(str stream.DeltaStream, reqCh <-chan *discovery.De
 				// We also set the subscription as wildcard based on its legacy meaning (no resource name sent in resource_names_subscribe).
 				// If the subscription starts with this legacy mode, adding new resources will not unsubscribe from wildcard.
 				// It can still be done by explicitly unsubscribing from "*"
-				watch.subscription = stream.NewDeltaSubscription(s.filterWildcard(typeURL, req.GetResourceNamesSubscribe()), s.filterWildcard(typeURL, req.GetResourceNamesUnsubscribe()), req.GetInitialResourceVersions(), s.opts.IsLegacyWildcardActive(typeURL))
+				watch.subscription = stream.NewDeltaSubscription(req.GetResourceNamesSubscribe(), req.GetResourceNamesUnsubscribe(), req.GetInitialResourceVersions(), s.opts.IsLegacyWildcardActive(typeURL), s.opts.ShouldIgnoreWildcard(typeURL))
 			} else {
 				watch.Cancel()
 
 				// Update subscription with the new requests
 				watch.subscription.UpdateResourceSubscriptions(
-					s.filterWildcard(typeURL, req.GetResourceNamesSubscribe()),
-					s.filterWildcard(typeURL, req.GetResourceNamesUnsubscribe()),
+					req.GetResourceNamesSubscribe(),
+					req.GetResourceNamesUnsubscribe(),
+					s.opts.ShouldIgnoreWildcard(typeURL),
 				)
 			}
 

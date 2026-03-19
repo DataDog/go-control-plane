@@ -55,9 +55,9 @@ func newSubscription(emptyRequest, allowLegacyWildcard bool, initialResourceVers
 	return state
 }
 
-func NewSotwSubscription(subscribed []string, allowLegacyWildcard bool) Subscription {
+func NewSotwSubscription(subscribed []string, allowLegacyWildcard bool, ignoreWildcard bool) Subscription {
 	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, nil)
-	sub.SetResourceSubscription(subscribed)
+	sub.SetResourceSubscription(subscribed, ignoreWildcard)
 	return sub
 }
 
@@ -66,7 +66,17 @@ func NewSotwSubscription(subscribed []string, allowLegacyWildcard bool) Subscrip
 // Used in sotw subscriptions
 // Behavior is based on
 // https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#how-the-client-specifies-what-resources-to-return
-func (s *Subscription) SetResourceSubscription(subscribed []string) {
+func (s *Subscription) SetResourceSubscription(subscribed []string, ignoreWildcard bool) {
+	// Filter out wildcards if requested
+	if ignoreWildcard {
+		filtered := make([]string, 0, len(subscribed))
+		for _, r := range subscribed {
+			if r != explicitWildcard {
+				filtered = append(filtered, r)
+			}
+		}
+		subscribed = filtered
+	}
 	if s.allowLegacyWildcard {
 		if len(subscribed) == 0 {
 			// We were wildcard based on legacy behavior and still don't request any resource
@@ -115,16 +125,34 @@ func (s *Subscription) SetResourceSubscription(subscribed []string) {
 	s.subscribedPrefixes = subscribedPrefixes
 }
 
-func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, allowLegacyWildcard bool) Subscription {
+func NewDeltaSubscription(subscribed, unsubscribed []string, initialResourceVersions map[string]string, allowLegacyWildcard bool, ignoreWildcard bool) Subscription {
 	sub := newSubscription(len(subscribed) == 0, allowLegacyWildcard, initialResourceVersions)
-	sub.UpdateResourceSubscriptions(subscribed, unsubscribed)
+	sub.UpdateResourceSubscriptions(subscribed, unsubscribed, ignoreWildcard)
 	return sub
 }
 
 // UpdateResourceSubscriptions updates the subscribed resources (including the wildcard state)
 // based on newly subscribed or unsubscribed resources
 // Used in delta subscriptions.
-func (s *Subscription) UpdateResourceSubscriptions(subscribed, unsubscribed []string) {
+func (s *Subscription) UpdateResourceSubscriptions(subscribed, unsubscribed []string, ignoreWildcard bool) {
+	// Filter out wildcards if requested
+	if ignoreWildcard {
+		filteredSub := make([]string, 0, len(subscribed))
+		for _, r := range subscribed {
+			if r != explicitWildcard {
+				filteredSub = append(filteredSub, r)
+			}
+		}
+		subscribed = filteredSub
+
+		filteredUnsub := make([]string, 0, len(unsubscribed))
+		for _, r := range unsubscribed {
+			if r != explicitWildcard {
+				filteredUnsub = append(filteredUnsub, r)
+			}
+		}
+		unsubscribed = filteredUnsub
+	}
 	// Handles legacy wildcard behavior first to exit if we are still in this behavior
 	if s.allowLegacyWildcard {
 		// The protocol (as of v1.36.0) only references subscribed as triggering

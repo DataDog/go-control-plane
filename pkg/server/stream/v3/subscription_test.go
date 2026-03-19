@@ -10,64 +10,64 @@ import (
 
 func TestSotwSubscriptions(t *testing.T) {
 	t.Run("legacy mode properly handled", func(t *testing.T) {
-		sub := NewSotwSubscription([]string{}, true)
+		sub := NewSotwSubscription([]string{}, true, false)
 		assert.True(t, sub.IsWildcard())
 
 		// Requests always set empty in legacy mode
-		sub.SetResourceSubscription([]string{})
+		sub.SetResourceSubscription([]string{}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Requests always set empty in legacy mode
-		sub.SetResourceSubscription(nil)
+		sub.SetResourceSubscription(nil, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Set any resource, no longer wildcard
-		sub.SetResourceSubscription([]string{"resource"})
+		sub.SetResourceSubscription([]string{"resource"}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 
 		// No longer watch any resource, should not come back to wildcard as no longer in legacy mode
 		// We end up with a watch to nothing
-		sub.SetResourceSubscription(nil)
+		sub.SetResourceSubscription(nil, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 	})
 
 	t.Run("new wildcard mode from start", func(t *testing.T) {
 		// A resource is provided so the subscription was created in wildcard
-		sub := NewSotwSubscription([]string{"*"}, true)
+		sub := NewSotwSubscription([]string{"*"}, true, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Keep wildcard, no change
-		sub.SetResourceSubscription([]string{"*"})
+		sub.SetResourceSubscription([]string{"*"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Add resource to wildcard
-		sub.SetResourceSubscription([]string{"*", "resource"})
+		sub.SetResourceSubscription([]string{"*", "resource"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 
 		// Add/Remove resource to wildcard
-		sub.SetResourceSubscription([]string{"*", "otherresource"})
+		sub.SetResourceSubscription([]string{"*", "otherresource"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"otherresource": {}}, sub.SubscribedResources())
 
 		// Remove wildcard
-		sub.SetResourceSubscription([]string{"otherresource"})
+		sub.SetResourceSubscription([]string{"otherresource"}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"otherresource": {}}, sub.SubscribedResources())
 
 		// Remove last resource
-		sub.SetResourceSubscription([]string{})
+		sub.SetResourceSubscription([]string{}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Re-subscribe to wildcard
-		sub.SetResourceSubscription([]string{"*"})
+		sub.SetResourceSubscription([]string{"*"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 	})
@@ -75,25 +75,25 @@ func TestSotwSubscriptions(t *testing.T) {
 
 func TestDeltaSubscriptions(t *testing.T) {
 	t.Run("legacy mode properly handled", func(t *testing.T) {
-		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"}, true)
+		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"}, true, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
 
 		// New request with no additional subscription
-		sub.UpdateResourceSubscriptions(nil, nil)
+		sub.UpdateResourceSubscriptions(nil, nil, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
 
 		// New request adding a resource
-		sub.UpdateResourceSubscriptions([]string{"resource"}, nil)
+		sub.UpdateResourceSubscriptions([]string{"resource"}, nil, false)
 		assert.True(t, sub.IsWildcard()) // Wildcard not unsubscribed
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
 
 		// Unsubscribe from "resource", still wildcard
-		sub.UpdateResourceSubscriptions(nil, []string{"resource"})
+		sub.UpdateResourceSubscriptions(nil, []string{"resource"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 		// Version is set to "" to trigger an update or have the resource in the "removed" field
@@ -104,24 +104,24 @@ func TestDeltaSubscriptions(t *testing.T) {
 
 	t.Run("new wildcard mode", func(t *testing.T) {
 		// A resource is provided so the subscription was created in wildcard
-		sub := NewDeltaSubscription([]string{"*"}, []string{}, map[string]string{"resource": "version"}, true)
+		sub := NewDeltaSubscription([]string{"*"}, []string{}, map[string]string{"resource": "version"}, true, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// New request with no additional subscription
-		sub.UpdateResourceSubscriptions(nil, nil)
+		sub.UpdateResourceSubscriptions(nil, nil, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
 
 		// Add resource to wildcard
-		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{})
+		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 		assert.Equal(t, map[string]string{"resource": "version"}, sub.ReturnedResources())
 
 		// Unsubscribe from resource while wildcard
-		sub.UpdateResourceSubscriptions([]string{"otherresource"}, []string{"resource"})
+		sub.UpdateResourceSubscriptions([]string{"otherresource"}, []string{"resource"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"otherresource": {}}, sub.SubscribedResources())
 		// Version is set to "" to trigger an update or have the resource in the "removed" field
@@ -132,29 +132,29 @@ func TestDeltaSubscriptions(t *testing.T) {
 		sub.SetReturnedResources(nil)
 
 		// Remove subscription to wildcard
-		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{"*"})
+		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{"*"}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}, "otherresource": {}}, sub.SubscribedResources())
 		assert.Empty(t, sub.ReturnedResources())
 
 		// Remove all subscriptions
 		// Does not come back to wildcard
-		sub.UpdateResourceSubscriptions([]string{}, []string{"resource", "otherresource"})
+		sub.UpdateResourceSubscriptions([]string{}, []string{"resource", "otherresource"}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Attempt to remove wildcard when not subscribed
-		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{"*"})
+		sub.UpdateResourceSubscriptions([]string{"resource"}, []string{"*"}, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 
 		// Resubscribe to wildcard
-		sub.UpdateResourceSubscriptions([]string{"*"}, nil)
+		sub.UpdateResourceSubscriptions([]string{"*"}, nil, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 
 		// Attempt to remove not-subscribed resource. Should just be ignored
-		sub.UpdateResourceSubscriptions([]string{}, []string{"otherresource"})
+		sub.UpdateResourceSubscriptions([]string{}, []string{"otherresource"}, false)
 		assert.True(t, sub.IsWildcard())
 		assert.Equal(t, map[string]struct{}{"resource": {}}, sub.SubscribedResources())
 	})
@@ -168,18 +168,18 @@ func TestSotwSubscriptionsWithDeactivatedLegacyWildcard(t *testing.T) {
 
 		typeURL := "type.googleapis.com/envoy.config.cluster.v3.Cluster"
 		// Create subscription with empty resource list (would normally be legacy wildcard)
-		sub := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(typeURL))
+		sub := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(typeURL), false)
 
 		// With deactivated legacy wildcard, subscription should NOT be wildcard initially
 		// because allowLegacyWildcard=false means empty list doesn't trigger legacy behavior
 		assert.False(t, sub.IsWildcard())
 
 		// Set empty resources - should remain non-wildcard
-		sub.SetResourceSubscription([]string{})
+		sub.SetResourceSubscription([]string{}, false)
 		assert.False(t, sub.IsWildcard())
 
 		// Can still explicitly subscribe to wildcard
-		sub.SetResourceSubscription([]string{"*"})
+		sub.SetResourceSubscription([]string{"*"}, false)
 		assert.True(t, sub.IsWildcard())
 	})
 }
@@ -195,21 +195,21 @@ func TestSotwSubscriptionsWithDeactivatedLegacyWildcardForTypes(t *testing.T) {
 		deactivateOpt(&opts)
 
 		// Both cluster and endpoint should have legacy wildcard deactivated
-		subCluster := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(clusterType))
-		subCluster.SetResourceSubscription([]string{})
+		subCluster := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(clusterType), false)
+		subCluster.SetResourceSubscription([]string{}, false)
 		assert.False(t, subCluster.IsWildcard())
 
-		subEndpoint := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(endpointType))
-		subEndpoint.SetResourceSubscription([]string{})
+		subEndpoint := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(endpointType), false)
+		subEndpoint.SetResourceSubscription([]string{}, false)
 		assert.False(t, subEndpoint.IsWildcard())
 
 		// Can still explicitly subscribe to wildcard
-		subEndpoint.SetResourceSubscription([]string{"*"})
+		subEndpoint.SetResourceSubscription([]string{"*"}, false)
 		assert.True(t, subEndpoint.IsWildcard())
 
 		// Route should still have legacy wildcard enabled
-		subRoute := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(routeType))
-		subRoute.SetResourceSubscription([]string{})
+		subRoute := NewSotwSubscription([]string{}, opts.IsLegacyWildcardActive(routeType), false)
+		subRoute.SetResourceSubscription([]string{}, false)
 		assert.True(t, subRoute.IsWildcard())
 	})
 }
@@ -222,19 +222,19 @@ func TestDeltaSubscriptionsWithDeactivatedLegacyWildcard(t *testing.T) {
 
 		typeURL := "type.googleapis.com/envoy.config.cluster.v3.Cluster"
 		// Create subscription with empty resource list (would normally be legacy wildcard)
-		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"}, opts.IsLegacyWildcardActive(typeURL))
+		sub := NewDeltaSubscription([]string{}, []string{}, map[string]string{"resource": "version"}, opts.IsLegacyWildcardActive(typeURL), false)
 
 		// With deactivated legacy wildcard, subscription should NOT be wildcard initially
 		assert.False(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// New request with no additional subscription
-		sub.UpdateResourceSubscriptions(nil, nil)
+		sub.UpdateResourceSubscriptions(nil, nil, false)
 		assert.False(t, sub.IsWildcard())
 		assert.Empty(t, sub.SubscribedResources())
 
 		// Can still explicitly subscribe to wildcard
-		sub.UpdateResourceSubscriptions([]string{"*"}, nil)
+		sub.UpdateResourceSubscriptions([]string{"*"}, nil, false)
 		assert.True(t, sub.IsWildcard())
 	})
 }
@@ -250,21 +250,21 @@ func TestDeltaSubscriptionsWithDeactivatedLegacyWildcardForTypes(t *testing.T) {
 		deactivateOpt(&opts)
 
 		// Both cluster and endpoint should have legacy wildcard deactivated
-		subCluster := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(clusterType))
-		subCluster.UpdateResourceSubscriptions(nil, nil)
+		subCluster := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(clusterType), false)
+		subCluster.UpdateResourceSubscriptions(nil, nil, false)
 		assert.False(t, subCluster.IsWildcard())
 
-		subEndpoint := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(endpointType))
-		subEndpoint.UpdateResourceSubscriptions(nil, nil)
+		subEndpoint := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(endpointType), false)
+		subEndpoint.UpdateResourceSubscriptions(nil, nil, false)
 		assert.False(t, subEndpoint.IsWildcard())
 
 		// Can still explicitly subscribe to wildcard
-		subEndpoint.UpdateResourceSubscriptions([]string{"*"}, nil)
+		subEndpoint.UpdateResourceSubscriptions([]string{"*"}, nil, false)
 		assert.True(t, subEndpoint.IsWildcard())
 
 		// Route should still have legacy wildcard enabled
-		subRoute := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(routeType))
-		subRoute.UpdateResourceSubscriptions(nil, nil)
+		subRoute := NewDeltaSubscription([]string{}, []string{}, map[string]string{}, opts.IsLegacyWildcardActive(routeType), false)
+		subRoute.UpdateResourceSubscriptions(nil, nil, false)
 		assert.True(t, subRoute.IsWildcard())
 	})
 }
