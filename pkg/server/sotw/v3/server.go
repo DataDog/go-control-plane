@@ -92,6 +92,13 @@ func DeactivateLegacyWildcardForTypes(types []string) config.XDSOption {
 	return config.DeactivateLegacyWildcardForTypes(types)
 }
 
+// IgnoreWildcardForTypes filters out explicit wildcard ("*") subscriptions for specific resource types.
+// Envoy sometimes sends wildcard requests for types like VHDS even though they don't support it.
+// Also deactivates legacy wildcard for these types to maintain consistent behavior.
+func IgnoreWildcardForTypes(types []string) config.XDSOption {
+	return config.IgnoreWildcardForTypes(types)
+}
+
 type server struct {
 	cache     cache.ConfigWatcher
 	callbacks Callbacks
