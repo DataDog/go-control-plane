@@ -233,7 +233,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 					if !known {
 						changedResources = append(changedResources, cachedName)
 					} else {
-						resourceVersion, err := res.getVersion(useResourceVersion)
+						resourceVersion, err := res.GetVersion(useResourceVersion)
 						if err != nil {
 							return nil, nil, fmt.Errorf("failed to compute version of %s: %w", cachedName, err)
 						}
