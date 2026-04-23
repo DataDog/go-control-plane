@@ -2,6 +2,8 @@ module github.com/envoyproxy/go-control-plane/examples/dyplomat
 
 go 1.25.7
 
+toolchain go1.26.2
+
 replace (
 	github.com/envoyproxy/go-control-plane => ../..
 	github.com/envoyproxy/go-control-plane/envoy => ../../envoy
