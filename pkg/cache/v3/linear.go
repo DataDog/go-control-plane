@@ -570,6 +570,26 @@ func (cache *LinearCache) GetResources() map[string]types.Resource {
 	return resources
 }
 
+// GetResource returns the resource stored under name and its version.
+// A nil resource with a nil error means the name is not in the cache.
+//
+// useResourceVersion controls the returned version:
+//   - if set to false versions reflect the cache version when the entry was added
+//   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
+func (cache *LinearCache) GetResource(name string, useResourceVersion bool) (types.Resource, string, error) {
+	cache.mu.RLock()
+	defer cache.mu.RUnlock()
+	r, ok := cache.resources[name]
+	if !ok {
+		return nil, "", nil
+	}
+	version, err := r.GetVersion(useResourceVersion)
+	if err != nil {
+		return nil, "", fmt.Errorf("linear cache: get version for %q: %w", name, err)
+	}
+	return r.GetRawResource().Resource, version, nil
+}
+
 // The implementations of sotw and delta watches handling is nearly identical. The main distinctions are:
 //   - handling of version in sotw when the request is the first of a subscription. Delta has a proper handling based on the request providing known versions.
 //   - building the initial resource versions in delta if they've not been computed yet.

@@ -396,6 +396,35 @@ func TestLinearGetResources(t *testing.T) {
 	assert.Truef(t, reflect.DeepEqual(expectedResources, resources), "resources are not equal. got: %v want: %v", resources, expectedResources)
 }
 
+func TestLinearGetResource(t *testing.T) {
+	c := NewLinearCache(testType, WithVersionPrefix("instance1-"))
+	require.NoError(t, c.UpdateResource("a", testResource("a")))
+
+	t.Run("found cache version", func(t *testing.T) {
+		res, version, err := c.GetResource("a", false)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		assert.True(t, reflect.DeepEqual(testResource("a"), res))
+		assert.Equal(t, "instance1-1", version)
+	})
+
+	t.Run("found resource version", func(t *testing.T) {
+		_, cacheVersion, err := c.GetResource("a", false)
+		require.NoError(t, err)
+		_, resourceVersion, err := c.GetResource("a", true)
+		require.NoError(t, err)
+		assert.NotEmpty(t, resourceVersion)
+		assert.NotEqual(t, cacheVersion, resourceVersion, "content-hash version should differ from cache version")
+	})
+
+	t.Run("missing returns nil resource and nil error", func(t *testing.T) {
+		res, version, err := c.GetResource("missing", false)
+		require.NoError(t, err)
+		assert.Nil(t, res)
+		assert.Empty(t, version)
+	})
+}
+
 func TestLinearVersionPrefix(t *testing.T) {
 	c := NewLinearCache(testType, WithVersionPrefix("instance1-"))
 
