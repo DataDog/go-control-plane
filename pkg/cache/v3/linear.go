@@ -23,10 +23,27 @@ import (
 	"strings"
 	"sync"
 
+	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/internal"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/log"
 )
+
+// ResourceTransform produces the per-watch view of a stored resource. It is set
+// per-watch via CreateWatchWithTransform / CreateDeltaWatchWithTransform and
+// applied when the cache builds a response for that watch.
+//
+//   - innerVersion is the cache's own (inner) version of the stored resource,
+//     handed in so the caller can embed it in the wire version if it wants.
+//   - keep=false omits the resource from this watch's response.
+//   - wireVersion == "" passes the stored resource through unchanged (the cache
+//     uses its normal versioning on both the wire and its internal tracking).
+//   - wireVersion != "" ships out's bytes and stamps wireVersion on the WIRE
+//     (delta Resource.version), while the cache keeps innerVersion in the
+//     internal returnedResources used for change detection. This divergence is
+//     deliberate: the diff stays in inner-version space, so a wire version that
+//     varies per client (e.g. a subset version) never triggers spurious re-emits.
+type ResourceTransform func(name string, res types.Resource, innerVersion string) (out types.Resource, wireVersion string, keep bool)
 
 type watch interface {
 	// isDelta indicates whether the watch is a delta one.
@@ -45,6 +62,11 @@ type watch interface {
 	// sendResponse sends the response for the watch.
 	// It must be called at most once.
 	sendResponse(resp WatchResponse)
+	// getTransform returns the per-watch resource transform, or nil.
+	getTransform() ResourceTransform
+	// getNode returns the node the watch was opened for, used to index the watch
+	// for RefreshWatches via the cache's NodeHash.
+	getNode() *core.Node
 }
 
 type watches map[uint64]watch
@@ -89,6 +111,17 @@ type LinearCache struct {
 
 	log log.Logger
 
+	// nodeHash, when set (via WithNodeHash), derives a per-client key from a
+	// watch's node. Transform-watches are then indexed by that key in nodeIndex
+	// so RefreshWatches can target a single client without scanning all watches.
+	nodeHash NodeHash
+	// nodeIndex maps a node key to its tracked transform-watches. Maintained in
+	// trackWatch and cleaned in removeWatch/removeWildcardWatch.
+	nodeIndex map[string]watches
+	// nodeKeyByWatch maps a tracked transform-watch id back to its node key, so
+	// any removal path can clean nodeIndex without recomputing the hash.
+	nodeKeyByWatch map[uint64]string
+
 	mu sync.RWMutex
 }
 
@@ -121,6 +154,16 @@ func WithLogger(log log.Logger) LinearCacheOption {
 	}
 }
 
+// WithNodeHash enables per-node indexing of transform-watches so RefreshWatches
+// can target a single client. The hash must produce, for a watch's node, the
+// same key the caller passes to RefreshWatches. Only watches created via
+// CreateWatchWithTransform / CreateDeltaWatchWithTransform are indexed.
+func WithNodeHash(hash NodeHash) LinearCacheOption {
+	return func(cache *LinearCache) {
+		cache.nodeHash = hash
+	}
+}
+
 // NewLinearCache creates a new cache. See the comments on the struct definition.
 func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 	out := &LinearCache{
@@ -132,6 +175,8 @@ func NewLinearCache(typeURL string, opts ...LinearCacheOption) *LinearCache {
 		version:         0,
 		currentWatchID:  0,
 		log:             log.NewDefaultLogger(),
+		nodeIndex:       make(map[string]watches),
+		nodeKeyByWatch:  make(map[uint64]string),
 	}
 	for _, opt := range opts {
 		opt(out)
@@ -326,6 +371,18 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 		}
 	}
 
+	return cache.buildResponseForResources(watch, resourcesToReturn, removedResources)
+}
+
+// buildResponseForResources builds a WatchResponse for the given resource names,
+// applying the watch's transform (if any). The internal returnedVersions always
+// carry the stored resource's inner version, even when the transform stamps a
+// different version on the wire — keeping change detection in inner-version space.
+// Must be called under lock.
+func (cache *LinearCache) buildResponseForResources(watch watch, resourcesToReturn []string, removedResources []string) (WatchResponse, error) {
+	sub := watch.getSubscription()
+	transform := watch.getTransform()
+
 	// returnedVersions includes all resources currently known to the subscription and their version.
 	// Clone the current returned versions. The cache should not alter the subscription
 	returnedVersions := maps.Clone(sub.ReturnedResources())
@@ -333,11 +390,25 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 	resources := make([]*internal.CachedResource, 0, len(resourcesToReturn))
 	for _, resourceName := range resourcesToReturn {
 		cachedResource := cache.resources[resourceName]
-		resources = append(resources, cachedResource)
 		version, err := cachedResource.GetVersion(watch.useResourceVersion())
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute version of %s: %w", resourceName, err)
 		}
+
+		emit := cachedResource
+		if transform != nil {
+			out, wireVersion, keep := transform(resourceName, cachedResource.GetRawResource().Resource, version)
+			if !keep {
+				continue
+			}
+			if wireVersion != "" {
+				// Ship the transformed bytes stamped with wireVersion on the wire,
+				// but keep the inner version in returnedVersions below.
+				emit = internal.NewCachedResource(resourceName, out, internal.WithResourceVersion(wireVersion))
+			}
+		}
+
+		resources = append(resources, emit)
 		returnedVersions[resourceName] = version
 	}
 
@@ -349,6 +420,58 @@ func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (W
 	}
 
 	return watch.buildResponse(resources, removedResources, returnedVersions, cache.getVersion()), nil
+}
+
+// RefreshWatches forces a resend of the resources matching matchResource to the
+// transform-watches of a single node (keyed by the cache's NodeHash). It bypasses
+// the version diff — used for out-of-band per-client updates where the stored
+// resource is unchanged but the per-client view (and thus the wire version) is not.
+// matchResource is called per subscribed resource name and must not block.
+func (cache *LinearCache) RefreshWatches(nodeKey string, matchResource func(name string) bool) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	type tracked struct {
+		id uint64
+		w  watch
+	}
+	// Snapshot first: sending removes watches (one-shot), mutating nodeIndex.
+	toRefresh := make([]tracked, 0, len(cache.nodeIndex[nodeKey]))
+	for id, w := range cache.nodeIndex[nodeKey] {
+		toRefresh = append(toRefresh, tracked{id, w})
+	}
+
+	for _, t := range toRefresh {
+		sub := t.w.getSubscription()
+		var matched []string
+		for name := range sub.SubscribedResources() {
+			if !matchResource(name) {
+				continue
+			}
+			if _, ok := cache.resources[name]; ok {
+				matched = append(matched, name)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+
+		response, err := cache.buildResponseForResources(t.w, matched, nil)
+		if err != nil {
+			cache.log.Errorf("[linear cache] failed to build refresh response for node %q: %v", nodeKey, err)
+			continue
+		}
+		if response == nil {
+			continue
+		}
+		t.w.sendResponse(response)
+		// One-shot, like notifyAll: the server re-creates the watch on the next request.
+		if t.w.getSubscription().IsWildcard() {
+			cache.removeWildcardWatch(t.id)
+		} else {
+			cache.removeWatch(t.id, t.w.getSubscription())
+		}
+	}
 }
 
 func (cache *LinearCache) notifyAll(modified []string) error {
@@ -595,6 +718,17 @@ func (cache *LinearCache) GetResource(name string, useResourceVersion bool) (typ
 //   - building the initial resource versions in delta if they've not been computed yet.
 //   - computeSotwResponse and computeDeltaResponse has slightly different implementations due to sotw requirements to return full state for certain resources only.
 func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value chan Response) (func(), error) {
+	return cache.createWatch(request, sub, value, nil)
+}
+
+// CreateWatchWithTransform is CreateWatch with a per-watch ResourceTransform
+// applied when building responses, and the watch indexed by node (if WithNodeHash
+// is set) for RefreshWatches.
+func (cache *LinearCache) CreateWatchWithTransform(request *Request, sub Subscription, value chan Response, transform ResourceTransform) (func(), error) {
+	return cache.createWatch(request, sub, value, transform)
+}
+
+func (cache *LinearCache) createWatch(request *Request, sub Subscription, value chan Response, transform ResourceTransform) (func(), error) {
 	if request.GetTypeUrl() != cache.typeURL {
 		return nil, fmt.Errorf("request type %s does not match cache type %s", request.GetTypeUrl(), cache.typeURL)
 	}
@@ -624,6 +758,7 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 		Response:           value,
 		subscription:       sub,
 		fullStateResponses: ResourceRequiresFullStateInSotw(cache.typeURL),
+		transform:          transform,
 	}
 
 	cache.mu.Lock()
@@ -643,11 +778,22 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 }
 
 func (cache *LinearCache) CreateDeltaWatch(request *DeltaRequest, sub Subscription, value chan DeltaResponse) (func(), error) {
+	return cache.createDeltaWatch(request, sub, value, nil)
+}
+
+// CreateDeltaWatchWithTransform is CreateDeltaWatch with a per-watch
+// ResourceTransform applied when building responses, and the watch indexed by
+// node (if WithNodeHash is set) for RefreshWatches.
+func (cache *LinearCache) CreateDeltaWatchWithTransform(request *DeltaRequest, sub Subscription, value chan DeltaResponse, transform ResourceTransform) (func(), error) {
+	return cache.createDeltaWatch(request, sub, value, transform)
+}
+
+func (cache *LinearCache) createDeltaWatch(request *DeltaRequest, sub Subscription, value chan DeltaResponse, transform ResourceTransform) (func(), error) {
 	if request.GetTypeUrl() != cache.typeURL {
 		return nil, fmt.Errorf("request type %s does not match cache type %s", request.GetTypeUrl(), cache.typeURL)
 	}
 
-	watch := DeltaResponseWatch{Request: request, Response: value, subscription: sub}
+	watch := DeltaResponseWatch{Request: request, Response: value, subscription: sub, transform: transform}
 
 	// On first request on a wildcard subscription, envoy does expect a response to come in to
 	// conclude initialization.
@@ -684,6 +830,12 @@ func (cache *LinearCache) trackWatch(watch watch) func() {
 
 	watchID := cache.nextWatchID()
 	sub := watch.getSubscription()
+
+	// Index transform-watches by node so RefreshWatches can target a single
+	// client. Cleaned by removeWatch/removeWildcardWatch via nodeKeyByWatch.
+	if cache.nodeHash != nil && watch.getTransform() != nil {
+		cache.addNodeIndex(cache.nodeHash.ID(watch.getNode()), watchID, watch)
+	}
 
 	if sub.IsWildcard() {
 		cache.log.Infof("[linear cache] open watch %d (delta: %t) for %s all resources", watchID, watch.isDelta(), cache.typeURL)
@@ -725,6 +877,33 @@ func (cache *LinearCache) trackWatch(watch watch) func() {
 func (cache *LinearCache) removeWildcardWatch(watchID uint64) {
 	cache.watchCount--
 	delete(cache.wildcardWatches, watchID)
+	cache.removeFromNodeIndex(watchID)
+}
+
+// addNodeIndex records a transform-watch under its node key. Must be called under lock.
+func (cache *LinearCache) addNodeIndex(nodeKey string, watchID uint64, watch watch) {
+	ws, ok := cache.nodeIndex[nodeKey]
+	if !ok {
+		ws = newWatches()
+		cache.nodeIndex[nodeKey] = ws
+	}
+	ws[watchID] = watch
+	cache.nodeKeyByWatch[watchID] = nodeKey
+}
+
+// removeFromNodeIndex drops a watch from the node index, if present. Must be
+// called under lock. Safe to call for watches that were never indexed.
+func (cache *LinearCache) removeFromNodeIndex(watchID uint64) {
+	nodeKey, ok := cache.nodeKeyByWatch[watchID]
+	if !ok {
+		return
+	}
+	delete(cache.nodeKeyByWatch, watchID)
+	ws := cache.nodeIndex[nodeKey]
+	delete(ws, watchID)
+	if len(ws) == 0 {
+		delete(cache.nodeIndex, nodeKey)
+	}
 }
 
 // Must be called under lock.
@@ -746,6 +925,7 @@ func (cache *LinearCache) removeWatch(watchID uint64, sub Subscription) {
 		}
 	}
 	cache.watchCount--
+	cache.removeFromNodeIndex(watchID)
 }
 
 func (cache *LinearCache) getVersion() string {

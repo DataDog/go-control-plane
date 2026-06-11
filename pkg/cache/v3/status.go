@@ -103,10 +103,21 @@ type ResponseWatch struct {
 
 	// fullStateResponses requires that all resources matching the request, with no regards to which ones actually updated, must be provided in the response.
 	fullStateResponses bool
+
+	// transform, when set, produces the per-watch view of each resource.
+	transform ResourceTransform
 }
 
 func (w ResponseWatch) isDelta() bool {
 	return false
+}
+
+func (w ResponseWatch) getTransform() ResourceTransform {
+	return w.transform
+}
+
+func (w ResponseWatch) getNode() *core.Node {
+	return w.Request.GetNode()
 }
 
 func (w ResponseWatch) useResourceVersion() bool {
@@ -145,10 +156,21 @@ type DeltaResponseWatch struct {
 
 	// Subscription stores the current client subscription state.
 	subscription Subscription
+
+	// transform, when set, produces the per-watch view of each resource.
+	transform ResourceTransform
 }
 
 func (w DeltaResponseWatch) isDelta() bool {
 	return true
+}
+
+func (w DeltaResponseWatch) getTransform() ResourceTransform {
+	return w.transform
+}
+
+func (w DeltaResponseWatch) getNode() *core.Node {
+	return w.Request.GetNode()
 }
 
 func (w DeltaResponseWatch) useResourceVersion() bool {
