@@ -381,6 +381,55 @@ func TestDeltaAggregatedHandlers(t *testing.T) {
 	}
 }
 
+func TestDeltaAggregatedCallbacksReceiveCachedNode(t *testing.T) {
+	config := makeMockConfigWatcher()
+	config.deltaResources = makeDeltaResources()
+	resp := makeMockDeltaStream(t)
+	defer resp.cancel()
+
+	callbackNodeIDs := make(chan string, 2)
+	s := server.NewServer(
+		context.Background(),
+		config,
+		server.CallbackFuncs{
+			StreamDeltaRequestFunc: func(_ int64, req *discovery.DeltaDiscoveryRequest) error {
+				callbackNodeIDs <- req.GetNode().GetId()
+				return nil
+			},
+		},
+	)
+
+	resp.recv <- &discovery.DeltaDiscoveryRequest{
+		Node:    node,
+		TypeUrl: rsrc.ListenerType,
+	}
+	resp.recv <- &discovery.DeltaDiscoveryRequest{
+		TypeUrl: rsrc.ClusterType,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.DeltaAggregatedResources(resp)
+	}()
+
+	for _, want := range []string{node.GetId(), node.GetId()} {
+		select {
+		case got := <-callbackNodeIDs:
+			assert.Equal(t, want, got)
+		case <-time.After(1 * time.Second):
+			t.Fatalf("timed out waiting for callback node ID %q", want)
+		}
+	}
+
+	close(resp.recv)
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for DeltaAggregatedResources to return")
+	}
+}
+
 func TestDeltaAggregateRequestType(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	config := makeMockConfigWatcher()
