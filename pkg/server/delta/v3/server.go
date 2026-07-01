@@ -209,18 +209,18 @@ func (s *server) processDelta(str stream.DeltaStream, reqCh <-chan *discovery.De
 				return err
 			}
 
-			if s.callbacks != nil {
-				if err := s.callbacks.OnStreamDeltaRequest(streamID, req); err != nil {
-					return err
-				}
-			}
-
 			// The node information might only be set on the first incoming delta discovery request, so store it here so we can
 			// reset it on subsequent requests that omit it.
 			if req.GetNode() != nil {
 				node = req.GetNode()
 			} else {
 				req.Node = node
+			}
+
+			if s.callbacks != nil {
+				if err := s.callbacks.OnStreamDeltaRequest(streamID, req); err != nil {
+					return err
+				}
 			}
 
 			// type URL is required for ADS but is implicit for any other xDS stream
