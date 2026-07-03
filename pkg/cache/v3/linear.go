@@ -495,7 +495,7 @@ func (cache *LinearCache) UpdateSnapshotResources(toUpdate []types.SnapshotResou
 // SetResources replaces current resources with a new set of resources.
 // Given the use of lazy serialization, if most resources are actually the same
 // using UpdateResources instead will be much more efficient.
-func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
+func (cache *LinearCache) SetResources(resources map[string]types.Resource) error {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
@@ -520,7 +520,10 @@ func (cache *LinearCache) SetResources(resources map[string]types.Resource) {
 
 	if err := cache.notifyAll(modified); err != nil {
 		cache.log.Errorf("Failed to notify watches: %s", err.Error())
+		return err
 	}
+
+	return nil
 }
 
 // SetSnapshotResources replaces current resources with a new set of resources.
