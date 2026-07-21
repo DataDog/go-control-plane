@@ -49,11 +49,6 @@ func (m *ProxyProtocol_KeyValuePair) MarshalToSizedBufferVTStrict(dAtA []byte) (
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.ValueStringEncoding != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ValueStringEncoding))
-		i--
-		dAtA[i] = 0x18
-	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
@@ -242,9 +237,6 @@ func (m *ProxyProtocol_KeyValuePair) SizeVT() (n int) {
 	l = len(m.Key)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	if m.ValueStringEncoding != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.ValueStringEncoding))
 	}
 	n += len(m.unknownFields)
 	return n

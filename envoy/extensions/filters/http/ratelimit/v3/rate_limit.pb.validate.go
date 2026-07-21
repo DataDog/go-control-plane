@@ -403,8 +403,6 @@ func (m *RateLimit) validate(all bool) error {
 
 	}
 
-	// no validation rules for MetadataNamespace
-
 	if len(errors) > 0 {
 		return RateLimitMultiError(errors)
 	}

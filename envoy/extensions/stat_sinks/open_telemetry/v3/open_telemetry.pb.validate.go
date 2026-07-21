@@ -185,8 +185,6 @@ func (m *SinkConfig) validate(all bool) error {
 		}
 	}
 
-	// no validation rules for MaxDataPointsPerRequest
-
 	oneofProtocolSpecifierPresent := false
 	switch v := m.ProtocolSpecifier.(type) {
 	case *SinkConfig_GrpcService:

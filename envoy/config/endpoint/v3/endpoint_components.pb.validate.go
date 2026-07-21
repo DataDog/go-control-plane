@@ -156,8 +156,6 @@ func (m *Endpoint) validate(all bool) error {
 
 	}
 
-	// no validation rules for ObservabilityName
-
 	if len(errors) > 0 {
 		return EndpointMultiError(errors)
 	}

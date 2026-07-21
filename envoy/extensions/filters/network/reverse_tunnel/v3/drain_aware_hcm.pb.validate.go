@@ -87,8 +87,6 @@ func (m *DrainAwareHttpConnectionManager) validate(all bool) error {
 		}
 	}
 
-	// no validation rules for EnableDrainWithGoaway
-
 	if len(errors) > 0 {
 		return DrainAwareHttpConnectionManagerMultiError(errors)
 	}

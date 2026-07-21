@@ -71,8 +71,6 @@ func (m *MySQLProxy) validate(all bool) error {
 
 	// no validation rules for AccessLog
 
-	// no validation rules for DownstreamSsl
-
 	if len(errors) > 0 {
 		return MySQLProxyMultiError(errors)
 	}

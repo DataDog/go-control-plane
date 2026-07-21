@@ -575,8 +575,6 @@ func (m *HealthCheckEjectUnhealthy) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
-	// no validation rules for HttpStatusCode
-
 	if len(errors) > 0 {
 		return HealthCheckEjectUnhealthyMultiError(errors)
 	}
@@ -897,8 +895,6 @@ func (m *HealthCheckFailure) validate(all bool) error {
 	}
 
 	// no validation rules for FirstCheck
-
-	// no validation rules for HttpStatusCode
 
 	if len(errors) > 0 {
 		return HealthCheckFailureMultiError(errors)

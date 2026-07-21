@@ -49,41 +49,6 @@ func (m *McpJsonRestBridge) MarshalToSizedBufferVTStrict(dAtA []byte) (int, erro
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.TraceContextExtraction != nil {
-		size, err := m.TraceContextExtraction.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x32
-	}
-	if m.RequestStorageMode != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RequestStorageMode))
-		i--
-		dAtA[i] = 0x28
-	}
-	if m.MaxResponseBodySize != nil {
-		size, err := (*wrapperspb.UInt32Value)(m.MaxResponseBodySize).MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x22
-	}
-	if m.MaxRequestBodySize != nil {
-		size, err := (*wrapperspb.UInt32Value)(m.MaxRequestBodySize).MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x1a
-	}
 	if m.ToolConfig != nil {
 		size, err := m.ToolConfig.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
@@ -103,39 +68,6 @@ func (m *McpJsonRestBridge) MarshalToSizedBufferVTStrict(dAtA []byte) (int, erro
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *TraceContextExtractionOptions) MarshalVTStrict() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.SizeVT()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *TraceContextExtractionOptions) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *TraceContextExtractionOptions) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.unknownFields != nil {
-		i -= len(m.unknownFields)
-		copy(dAtA[i:], m.unknownFields)
 	}
 	return len(dAtA) - i, nil
 }
@@ -199,39 +131,6 @@ func (m *ServerInfo) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *ToolsListLocal) MarshalVTStrict() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.SizeVT()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *ToolsListLocal) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *ToolsListLocal) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.unknownFields != nil {
-		i -= len(m.unknownFields)
-		copy(dAtA[i:], m.unknownFields)
-	}
-	return len(dAtA) - i, nil
-}
-
 func (m *ServerToolConfig) MarshalVTStrict() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -262,29 +161,15 @@ func (m *ServerToolConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.DefaultServerInfo != nil {
-		size, err := m.DefaultServerInfo.MarshalToSizedBufferVTStrict(dAtA[:i])
+	if m.ToolListHttpRule != nil {
+		size, err := m.ToolListHttpRule.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x2a
-	}
-	if msg, ok := m.ToolListConfig.(*ServerToolConfig_ToolListLocal); ok {
-		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-	}
-	if msg, ok := m.ToolListConfig.(*ServerToolConfig_ToolListHttpRule); ok {
-		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
+		dAtA[i] = 0x1a
 	}
 	if m.ListChanged {
 		i--
@@ -307,153 +192,6 @@ func (m *ServerToolConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error
 			i--
 			dAtA[i] = 0xa
 		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *ServerToolConfig_ToolListHttpRule) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *ServerToolConfig_ToolListHttpRule) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	if m.ToolListHttpRule != nil {
-		size, err := m.ToolListHttpRule.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x1a
-	} else {
-		i = protohelpers.EncodeVarint(dAtA, i, 0)
-		i--
-		dAtA[i] = 0x1a
-	}
-	return len(dAtA) - i, nil
-}
-func (m *ServerToolConfig_ToolListLocal) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *ServerToolConfig_ToolListLocal) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	if m.ToolListLocal != nil {
-		size, err := m.ToolListLocal.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x22
-	} else {
-		i = protohelpers.EncodeVarint(dAtA, i, 0)
-		i--
-		dAtA[i] = 0x22
-	}
-	return len(dAtA) - i, nil
-}
-func (m *ToolsListSpecificConfig) MarshalVTStrict() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.SizeVT()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *ToolsListSpecificConfig) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *ToolsListSpecificConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.unknownFields != nil {
-		i -= len(m.unknownFields)
-		copy(dAtA[i:], m.unknownFields)
-	}
-	if len(m.InputSchema) > 0 {
-		i -= len(m.InputSchema)
-		copy(dAtA[i:], m.InputSchema)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.InputSchema)))
-		i--
-		dAtA[i] = 0x1a
-	}
-	if len(m.Description) > 0 {
-		i -= len(m.Description)
-		copy(dAtA[i:], m.Description)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Description)))
-		i--
-		dAtA[i] = 0x12
-	}
-	if len(m.Title) > 0 {
-		i -= len(m.Title)
-		copy(dAtA[i:], m.Title)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Title)))
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *McpServerInfo) MarshalVTStrict() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.SizeVT()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *McpServerInfo) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *McpServerInfo) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.unknownFields != nil {
-		i -= len(m.unknownFields)
-		copy(dAtA[i:], m.unknownFields)
-	}
-	if len(m.Host) > 0 {
-		i -= len(m.Host)
-		copy(dAtA[i:], m.Host)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Host)))
-		i--
-		dAtA[i] = 0x12
-	}
-	if len(m.Path) > 0 {
-		i -= len(m.Path)
-		copy(dAtA[i:], m.Path)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Path)))
-		i--
-		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -487,38 +225,6 @@ func (m *ToolConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
-	}
-	if len(m.ServerInfo) > 0 {
-		for iNdEx := len(m.ServerInfo) - 1; iNdEx >= 0; iNdEx-- {
-			size, err := m.ServerInfo[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-			i--
-			dAtA[i] = 0x2a
-		}
-	}
-	if m.TextContentStreamingEnabled {
-		i--
-		if m.TextContentStreamingEnabled {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i--
-		dAtA[i] = 0x20
-	}
-	if m.ToolListConfig != nil {
-		size, err := m.ToolListConfig.MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x1a
 	}
 	if m.HttpRule != nil {
 		size, err := m.HttpRule.MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -615,51 +321,6 @@ func (m *HttpRule) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *McpJsonRestBridgePerRoute) MarshalVTStrict() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.SizeVT()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *McpJsonRestBridgePerRoute) MarshalToVTStrict(dAtA []byte) (int, error) {
-	size := m.SizeVT()
-	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
-}
-
-func (m *McpJsonRestBridgePerRoute) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.unknownFields != nil {
-		i -= len(m.unknownFields)
-		copy(dAtA[i:], m.unknownFields)
-	}
-	if len(m.ToolConfig) > 0 {
-		for iNdEx := len(m.ToolConfig) - 1; iNdEx >= 0; iNdEx-- {
-			size, err := m.ToolConfig[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
 func (m *McpJsonRestBridge) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -674,31 +335,6 @@ func (m *McpJsonRestBridge) SizeVT() (n int) {
 		l = m.ToolConfig.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	if m.MaxRequestBodySize != nil {
-		l = (*wrapperspb.UInt32Value)(m.MaxRequestBodySize).SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	if m.MaxResponseBodySize != nil {
-		l = (*wrapperspb.UInt32Value)(m.MaxResponseBodySize).SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	if m.RequestStorageMode != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.RequestStorageMode))
-	}
-	if m.TraceContextExtraction != nil {
-		l = m.TraceContextExtraction.SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	n += len(m.unknownFields)
-	return n
-}
-
-func (m *TraceContextExtractionOptions) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
 	n += len(m.unknownFields)
 	return n
 }
@@ -727,16 +363,6 @@ func (m *ServerInfo) SizeVT() (n int) {
 	return n
 }
 
-func (m *ToolsListLocal) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	n += len(m.unknownFields)
-	return n
-}
-
 func (m *ServerToolConfig) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -752,79 +378,8 @@ func (m *ServerToolConfig) SizeVT() (n int) {
 	if m.ListChanged {
 		n += 2
 	}
-	if vtmsg, ok := m.ToolListConfig.(interface{ SizeVT() int }); ok {
-		n += vtmsg.SizeVT()
-	}
-	if m.DefaultServerInfo != nil {
-		l = m.DefaultServerInfo.SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	n += len(m.unknownFields)
-	return n
-}
-
-func (m *ServerToolConfig_ToolListHttpRule) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
 	if m.ToolListHttpRule != nil {
 		l = m.ToolListHttpRule.SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	} else {
-		n += 2
-	}
-	return n
-}
-func (m *ServerToolConfig_ToolListLocal) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.ToolListLocal != nil {
-		l = m.ToolListLocal.SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	} else {
-		n += 2
-	}
-	return n
-}
-func (m *ToolsListSpecificConfig) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.Title)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	l = len(m.Description)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	l = len(m.InputSchema)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	n += len(m.unknownFields)
-	return n
-}
-
-func (m *McpServerInfo) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.Path)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	l = len(m.Host)
-	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
@@ -844,19 +399,6 @@ func (m *ToolConfig) SizeVT() (n int) {
 	if m.HttpRule != nil {
 		l = m.HttpRule.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	if m.ToolListConfig != nil {
-		l = m.ToolListConfig.SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	if m.TextContentStreamingEnabled {
-		n += 2
-	}
-	if len(m.ServerInfo) > 0 {
-		for _, e := range m.ServerInfo {
-			l = e.SizeVT()
-			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -891,22 +433,6 @@ func (m *HttpRule) SizeVT() (n int) {
 	l = len(m.Body)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	n += len(m.unknownFields)
-	return n
-}
-
-func (m *McpJsonRestBridgePerRoute) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.ToolConfig) > 0 {
-		for _, e := range m.ToolConfig {
-			l = e.SizeVT()
-			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-		}
 	}
 	n += len(m.unknownFields)
 	return n
