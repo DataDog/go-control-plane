@@ -67,7 +67,7 @@ func TestTTLResponse(t *testing.T) {
 
 	oneSecond := time.Second
 	cla := &envoy_config_endpoint_v3.ClusterLoadAssignment{ClusterName: "resource"}
-	snap, _ := cache.NewSnapshotWithTTLs("1", map[resource.Type][]types.ResourceWithTTL{
+	snap, _ := cache.NewSnapshotWithTTLs("1", map[resource.Type][]types.ResourceWithTTL{ //nolint:staticcheck // SA1019 pending migration to types.NewSnapshot
 		resource.EndpointType: {{
 			Resource: cla,
 			TTL:      &oneSecond,
