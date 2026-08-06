@@ -168,8 +168,8 @@ func makeConfigSource() *core.ConfigSource {
 	return source
 }
 
-func GenerateSnapshot() *cache.Snapshot {
-	snap, _ := cache.NewSnapshot("1",
+func GenerateSnapshot() *cache.Snapshot { //nolint:staticcheck // SA1019 pending migration to types.Snapshot
+	snap, _ := cache.NewSnapshot("1", //nolint:staticcheck // SA1019 pending migration to types.NewSnapshot
 		map[resource.Type][]types.Resource{
 			resource.ClusterType:  {makeCluster(ClusterName)},
 			resource.RouteType:    {makeRoute(RouteName, ClusterName)},
