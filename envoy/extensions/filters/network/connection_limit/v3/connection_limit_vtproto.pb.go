@@ -21,6 +21,66 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+func (m *ConnectionLimit_ConnectionBudget) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ConnectionLimit_ConnectionBudget) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ConnectionLimit_ConnectionBudget) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.MaxConnections != nil {
+		size, err := (*wrapperspb.UInt64Value)(m.MaxConnections).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Weight != nil {
+		size, err := (*wrapperspb.DoubleValue)(m.Weight).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *ConnectionLimit) MarshalVTStrict() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -50,6 +110,16 @@ func (m *ConnectionLimit) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error)
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.ConnectionBudget != nil {
+		size, err := m.ConnectionBudget.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x2a
 	}
 	if m.RuntimeEnabled != nil {
 		if vtmsg, ok := interface{}(m.RuntimeEnabled).(interface {
@@ -103,6 +173,28 @@ func (m *ConnectionLimit) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error)
 	return len(dAtA) - i, nil
 }
 
+func (m *ConnectionLimit_ConnectionBudget) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.Weight != nil {
+		l = (*wrapperspb.DoubleValue)(m.Weight).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.MaxConnections != nil {
+		l = (*wrapperspb.UInt64Value)(m.MaxConnections).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	n += len(m.unknownFields)
+	return n
+}
+
 func (m *ConnectionLimit) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -129,6 +221,10 @@ func (m *ConnectionLimit) SizeVT() (n int) {
 		} else {
 			l = proto.Size(m.RuntimeEnabled)
 		}
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.ConnectionBudget != nil {
+		l = m.ConnectionBudget.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
