@@ -142,6 +142,35 @@ func (m *ConnectionLimit) validate(all bool) error {
 		}
 	}
 
+	if all {
+		switch v := interface{}(m.GetConnectionBudget()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, ConnectionLimitValidationError{
+					field:  "ConnectionBudget",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, ConnectionLimitValidationError{
+					field:  "ConnectionBudget",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetConnectionBudget()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return ConnectionLimitValidationError{
+				field:  "ConnectionBudget",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
 	if len(errors) > 0 {
 		return ConnectionLimitMultiError(errors)
 	}
@@ -219,3 +248,149 @@ var _ interface {
 	Cause() error
 	ErrorName() string
 } = ConnectionLimitValidationError{}
+
+// Validate checks the field values on ConnectionLimit_ConnectionBudget with
+// the rules defined in the proto definition for this message. If any rules
+// are violated, the first error encountered is returned, or nil if there are
+// no violations.
+func (m *ConnectionLimit_ConnectionBudget) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on ConnectionLimit_ConnectionBudget with
+// the rules defined in the proto definition for this message. If any rules
+// are violated, the result is a list of violation errors wrapped in
+// ConnectionLimit_ConnectionBudgetMultiError, or nil if none found.
+func (m *ConnectionLimit_ConnectionBudget) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *ConnectionLimit_ConnectionBudget) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	if utf8.RuneCountInString(m.GetName()) < 1 {
+		err := ConnectionLimit_ConnectionBudgetValidationError{
+			field:  "Name",
+			reason: "value length must be at least 1 runes",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
+
+	if wrapper := m.GetWeight(); wrapper != nil {
+
+		if val := wrapper.GetValue(); val < 0 || val > 1 {
+			err := ConnectionLimit_ConnectionBudgetValidationError{
+				field:  "Weight",
+				reason: "value must be inside range [0, 1]",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
+	if wrapper := m.GetMaxConnections(); wrapper != nil {
+
+		if wrapper.GetValue() < 1 {
+			err := ConnectionLimit_ConnectionBudgetValidationError{
+				field:  "MaxConnections",
+				reason: "value must be greater than or equal to 1",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return ConnectionLimit_ConnectionBudgetMultiError(errors)
+	}
+
+	return nil
+}
+
+// ConnectionLimit_ConnectionBudgetMultiError is an error wrapping multiple
+// validation errors returned by
+// ConnectionLimit_ConnectionBudget.ValidateAll() if the designated
+// constraints aren't met.
+type ConnectionLimit_ConnectionBudgetMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m ConnectionLimit_ConnectionBudgetMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m ConnectionLimit_ConnectionBudgetMultiError) AllErrors() []error { return m }
+
+// ConnectionLimit_ConnectionBudgetValidationError is the validation error
+// returned by ConnectionLimit_ConnectionBudget.Validate if the designated
+// constraints aren't met.
+type ConnectionLimit_ConnectionBudgetValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e ConnectionLimit_ConnectionBudgetValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e ConnectionLimit_ConnectionBudgetValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e ConnectionLimit_ConnectionBudgetValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e ConnectionLimit_ConnectionBudgetValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e ConnectionLimit_ConnectionBudgetValidationError) ErrorName() string {
+	return "ConnectionLimit_ConnectionBudgetValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e ConnectionLimit_ConnectionBudgetValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sConnectionLimit_ConnectionBudget.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = ConnectionLimit_ConnectionBudgetValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = ConnectionLimit_ConnectionBudgetValidationError{}
