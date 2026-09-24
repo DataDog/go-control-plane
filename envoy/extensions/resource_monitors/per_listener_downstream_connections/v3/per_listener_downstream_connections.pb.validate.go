@@ -71,10 +71,10 @@ func (m *PerListenerDownstreamConnectionsConfig) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
-	if m.GetTotalConnections() <= 0 {
+	if val := m.GetTotalConnections(); val <= 0 || val > 9223372036854775807 {
 		err := PerListenerDownstreamConnectionsConfigValidationError{
 			field:  "TotalConnections",
-			reason: "value must be greater than 0",
+			reason: "value must be inside range (0, 9223372036854775807]",
 		}
 		if !all {
 			return err

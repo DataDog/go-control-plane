@@ -27,13 +27,18 @@ const (
 // Configuration for a named connection budget. Participating Connection Limit Filters opt in via
 // the matching “ConnectionBudget { name }“ block on the filter; the rebalancer distributes the
 // budget across them on every overload manager refresh tick.
+//
+// At most one “envoy.resource_monitors.per_listener_downstream_connections“ monitor can be
+// configured per bootstrap: the overload manager keys proactive monitors by type and rejects a
+// duplicate at startup. Multiple named budgets in one process are therefore not supported yet.
 // [#next-free-field: 6]
 type PerListenerDownstreamConnectionsConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the budget. Filters opting in must specify the same name in their
 	// “connection_budget“ block. Also used as the SingletonManager key.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Total connections shared across all participating listeners. Required, > 0.
+	// Total connections shared across all participating listeners. Required, in
+	// “[1, INT64_MAX]“ (the overload manager's resource interface is signed).
 	//
 	// At config load, “total_connections“ is cross-checked against
 	// “envoy.resource_monitors.global_downstream_max_connections.max_active_downstream_connections“
@@ -43,25 +48,33 @@ type PerListenerDownstreamConnectionsConfig struct {
 	// (“overload.global_downstream_max_connections“) is **not** cross-validated here; operators
 	// using it must size “total_connections“ manually.
 	TotalConnections uint64 `protobuf:"varint,2,opt,name=total_connections,json=totalConnections,proto3" json:"total_connections,omitempty"`
-	// Minimum allocation any participating listener gets, even when idle. Defaults to 1.
-	// Adding a listener that would push “N * min_listener_quota > total_connections“ is rejected
-	// at registration.
+	// Default floor: the minimum allocation any participating listener gets, even when idle.
+	// Defaults to 1. A listener can override it with its own “min_connections“ on the filter side
+	// (see “envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.min_connections“).
+	// Adding a listener that would push the sum of per-listener floors above “total_connections“
+	// is rejected at registration.
+	//
+	// Beyond the floor, each listener is granted its current usage, a “safety_margin“ on top of
+	// it, and a weight-proportional share of whatever is left. The slack share is independent of
+	// usage, so an idle listener keeps as much burst headroom as a busy one; size the floor for
+	// the burst a listener must absorb inside one refresh tick when that share is not enough.
 	MinListenerQuota uint64 `protobuf:"varint,3,opt,name=min_listener_quota,json=minListenerQuota,proto3" json:"min_listener_quota,omitempty"`
 	// Fractional headroom granted above a listener's current usage, in [0, 1]. With
 	// “safety_margin = 0.10“ a listener at 500 connections receives a cap of at least 550
 	// (subject to budget availability), so normal traffic variation does not push it into the
 	// rejection range. Defaults to 0.
 	SafetyMargin float64 `protobuf:"fixed64,4,opt,name=safety_margin,json=safetyMargin,proto3" json:"safety_margin,omitempty"`
-	// Fraction of “total_connections“ strictly above which per-listener weighting engages, in
-	// [0, 1]. While “sum_of_current_connections / total_connections <= pressure_threshold“ the
-	// algorithm is unchanged; once it strictly exceeds the threshold, each tier's per-listener
-	// demand is scaled by the filter-side “weight“ (see
+	// Fraction of “total_connections“ strictly above which the budget is considered under
+	// pressure, in [0, 1]. While “sum_of_current_connections / total_connections <=
+	// pressure_threshold“ every listener is served; once the ratio strictly exceeds the threshold,
+	// listeners that declared “weight: 0.0“ on the filter side (see
 	// “envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.weight“)
-	// and freed capacity flows naturally to the remaining listeners. Optional: when unset, the
-	// budget runs as if “pressure_threshold = 1.0“ (the strict “>“ check is never satisfied
-	// because the ratio cannot exceed 1.0, so pressure mode is effectively off). Set to a value
-	// less than 1.0 (e.g. 0.8) to opt in. An explicit “0.0“ keeps pressure mode active
-	// whenever there is any usage at all.
+	// are evicted — granted zero, floor included — and their capacity flows to the remaining
+	// listeners. Non-zero weights are unaffected by pressure. Optional: when unset, the budget
+	// runs as if “pressure_threshold = 1.0“ (the strict “>“ check is never satisfied because
+	// the ratio cannot exceed 1.0, so eviction is effectively off). Set to a value less than 1.0
+	// (e.g. 0.8) to opt in. An explicit “0.0“ evicts weight-0 listeners whenever there is any
+	// usage at all.
 	PressureThreshold *wrapperspb.DoubleValue `protobuf:"bytes,5,opt,name=pressure_threshold,json=pressureThreshold,proto3" json:"pressure_threshold,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -136,10 +149,10 @@ var File_envoy_extensions_resource_monitors_per_listener_downstream_connections_
 
 const file_envoy_extensions_resource_monitors_per_listener_downstream_connections_v3_per_listener_downstream_connections_proto_rawDesc = "" +
 	"\n" +
-	"senvoy/extensions/resource_monitors/per_listener_downstream_connections/v3/per_listener_downstream_connections.proto\x12Ienvoy.extensions.resource_monitors.per_listener_downstream_connections.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xcd\x02\n" +
+	"senvoy/extensions/resource_monitors/per_listener_downstream_connections/v3/per_listener_downstream_connections.proto\x12Ienvoy.extensions.resource_monitors.per_listener_downstream_connections.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xd7\x02\n" +
 	"&PerListenerDownstreamConnectionsConfig\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x124\n" +
-	"\x11total_connections\x18\x02 \x01(\x04B\a\xfaB\x042\x02 \x00R\x10totalConnections\x12,\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x12>\n" +
+	"\x11total_connections\x18\x02 \x01(\x04B\x11\xfaB\x0e2\f\x18\xff\xff\xff\xff\xff\xff\xff\xff\x7f \x00R\x10totalConnections\x12,\n" +
 	"\x12min_listener_quota\x18\x03 \x01(\x04R\x10minListenerQuota\x12<\n" +
 	"\rsafety_margin\x18\x04 \x01(\x01B\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\fsafetyMargin\x12d\n" +
 	"\x12pressure_threshold\x18\x05 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x11pressureThresholdB\xa3\x02\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +

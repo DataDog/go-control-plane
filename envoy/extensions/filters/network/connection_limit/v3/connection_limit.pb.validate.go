@@ -313,6 +313,21 @@ func (m *ConnectionLimit_ConnectionBudget) validate(all bool) error {
 
 	}
 
+	if wrapper := m.GetMinConnections(); wrapper != nil {
+
+		if wrapper.GetValue() < 1 {
+			err := ConnectionLimit_ConnectionBudgetValidationError{
+				field:  "MinConnections",
+				reason: "value must be greater than or equal to 1",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
 	if len(errors) > 0 {
 		return ConnectionLimit_ConnectionBudgetMultiError(errors)
 	}
