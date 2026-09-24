@@ -123,34 +123,47 @@ func (x *ConnectionLimit) GetConnectionBudget() *ConnectionLimit_ConnectionBudge
 // “max_connections“ above and is unaffected by any monitor.
 //
 // Note on “stat_prefix“: chains on the same listener that join the same budget must share the
-// same “stat_prefix“ — they are summed into one budget participant. Two different listeners,
-// however, must each use a distinct “stat_prefix“ when joining the same budget. A cross-
-// listener collision (typo / copy-paste) is rejected at listener warm with an
-// “EnvoyException“; the two listeners would otherwise silently pool their quota under a
-// single participant and lose tenant isolation.
+// same “stat_prefix“ — they form one budget participant and admit connections against one
+// shared counter and ceiling. They should also declare identical “weight“,
+// “min_connections“ and “max_connections“; if they differ, the most recently registered
+// chain's values win and a warning is logged (this is what lets an LDS update change the values
+// while the previous chain is still draining). Two different listeners, however, must each use
+// a distinct “stat_prefix“ when joining the same budget. A cross-listener collision (typo /
+// copy-paste) is rejected at listener warm with an “EnvoyException“; the two listeners would
+// otherwise silently pool their quota under a single participant and lose tenant isolation.
 type ConnectionLimit_ConnectionBudget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the budget to join. Must match the “name“ field of a configured
 	// “PerListenerDownstreamConnectionsConfig“.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Per-listener priority used by the budget under pressure (see
+	// Share of the budget's slack this listener receives, relative to the other participating
+	// listeners' weights, in [0.0, 1.0]. The slack is what remains once every listener's floor,
+	// current usage and safety margin are covered; with the default “weight = 1.0“ on every
+	// listener it is split evenly, so a quiet listener keeps the same headroom for a burst as a
+	// busy one. The weight never scales a listener's floor, usage or margin.
+	//
+	// An explicit “weight: 0.0“ is distinguishable from unset: the listener never receives
+	// slack, and once the budget is under pressure (see
 	// :ref:`PerListenerDownstreamConnectionsConfig.pressure_threshold
-	// <envoy_v3_api_field_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig.pressure_threshold>`).
-	// Optional, in [0.0, 1.0]. When the field is omitted entirely the listener behaves as if
-	// “weight = 1.0“ (normal priority). An explicit “weight: 0.0“ is distinguishable from
-	// unset and means "fully evict this listener under pressure" (the budget grants zero,
-	// including the “min_listener_quota“ floor). Intermediate values scale the listener's
-	// demand at every rebalance tier under pressure. Has no effect while pressure is at or
-	// below “pressure_threshold“.
+	// <envoy_v3_api_field_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig.pressure_threshold>`)
+	// it is fully evicted: the budget grants it zero, floor included.
 	Weight *wrapperspb.DoubleValue `protobuf:"bytes,2,opt,name=weight,proto3" json:"weight,omitempty"`
 	// Optional hard ceiling on the per-listener allocation. If set, the budget will never
-	// assign this listener more than “max_connections“, regardless of the 5-tier output or
-	// pressure weighting. Capacity that would have exceeded the ceiling flows back into the
-	// budget within the same rebalance pass and is distributed to other participating
-	// listeners that still have headroom (no stranded capacity except when every uncapped
-	// listener is itself saturated). Must be “>= min_listener_quota“ (rejected at filter
-	// registration otherwise).
+	// assign this listener more than “max_connections“. Capacity that would have exceeded the
+	// ceiling flows back into the budget within the same rebalance pass and is distributed to
+	// other participating listeners that still have headroom (no stranded capacity except when
+	// every uncapped listener is itself saturated). Must be “>=“ the listener's floor
+	// (“min_connections“ if set, else the budget's “min_listener_quota“); rejected at filter
+	// registration otherwise.
 	MaxConnections *wrapperspb.UInt64Value `protobuf:"bytes,3,opt,name=max_connections,json=maxConnections,proto3" json:"max_connections,omitempty"`
+	// Optional per-listener floor, overriding the budget's
+	// :ref:`min_listener_quota
+	// <envoy_v3_api_field_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig.min_listener_quota>`.
+	// The listener is granted at least this many connections whenever the budget can cover the
+	// sum of all floors, idle or not. Size it to the burst the listener must absorb inside one
+	// overload manager refresh tick. Adding a listener whose floor pushes the sum of floors above
+	// “total_connections“ is rejected at registration.
+	MinConnections *wrapperspb.UInt64Value `protobuf:"bytes,4,opt,name=min_connections,json=minConnections,proto3" json:"min_connections,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -206,22 +219,30 @@ func (x *ConnectionLimit_ConnectionBudget) GetMaxConnections() *wrapperspb.UInt6
 	return nil
 }
 
+func (x *ConnectionLimit_ConnectionBudget) GetMinConnections() *wrapperspb.UInt64Value {
+	if x != nil {
+		return x.MinConnections
+	}
+	return nil
+}
+
 var File_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto protoreflect.FileDescriptor
 
 const file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xe6\x04\n" +
+	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xb6\x05\n" +
 	"\x0fConnectionLimit\x12(\n" +
 	"\vstat_prefix\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\n" +
 	"statPrefix\x12N\n" +
 	"\x0fmax_connections\x18\x02 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12/\n" +
 	"\x05delay\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x05delay\x12Q\n" +
 	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabled\x12\x83\x01\n" +
-	"\x11connection_budget\x18\x05 \x01(\v2V.envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudgetR\x10connectionBudget\x1a\xce\x01\n" +
+	"\x11connection_budget\x18\x05 \x01(\v2V.envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudgetR\x10connectionBudget\x1a\x9e\x02\n" +
 	"\x10ConnectionBudget\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x12M\n" +
 	"\x06weight\x18\x02 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x06weight\x12N\n" +
-	"\x0fmax_connections\x18\x03 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnectionsB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x0fmax_connections\x18\x03 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12N\n" +
+	"\x0fmin_connections\x18\x04 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0eminConnectionsB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"Bio.envoyproxy.envoy.extensions.filters.network.connection_limit.v3B\x14ConnectionLimitProtoP\x01Zngithub.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/connection_limit/v3;connection_limitv3b\x06proto3"
 
 var (
@@ -252,11 +273,12 @@ var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_p
 	1, // 3: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.connection_budget:type_name -> envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget
 	5, // 4: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.weight:type_name -> google.protobuf.DoubleValue
 	2, // 5: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.max_connections:type_name -> google.protobuf.UInt64Value
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	2, // 6: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.min_connections:type_name -> google.protobuf.UInt64Value
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_init() }
