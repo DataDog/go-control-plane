@@ -11,6 +11,7 @@ import (
 	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -73,10 +74,15 @@ func (CpuUtilizationConfig_UtilizationComputeStrategy) EnumDescriptor() ([]byte,
 
 // The CPU utilization resource monitor reports the Envoy process the CPU Utilization across different platforms.
 type CpuUtilizationConfig struct {
-	state         protoimpl.MessageState                          `protogen:"open.v1"`
-	Mode          CpuUtilizationConfig_UtilizationComputeStrategy `protobuf:"varint,1,opt,name=mode,proto3,enum=envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig_UtilizationComputeStrategy" json:"mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState                          `protogen:"open.v1"`
+	Mode  CpuUtilizationConfig_UtilizationComputeStrategy `protobuf:"varint,1,opt,name=mode,proto3,enum=envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig_UtilizationComputeStrategy" json:"mode,omitempty"`
+	// Weight of the newest sample in the exponentially weighted moving average of the reported
+	// utilization, in (0, 1]; one sample is taken per overload manager refresh tick. With the
+	// default 0.05, a step in utilization reaches 63% of its value after about 20 samples. Larger
+	// values react faster to changes and to noise; 1.0 reports every sample unsmoothed.
+	SmoothingFactor *wrapperspb.DoubleValue `protobuf:"bytes,2,opt,name=smoothing_factor,json=smoothingFactor,proto3" json:"smoothing_factor,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CpuUtilizationConfig) Reset() {
@@ -116,13 +122,21 @@ func (x *CpuUtilizationConfig) GetMode() CpuUtilizationConfig_UtilizationCompute
 	return CpuUtilizationConfig_HOST
 }
 
+func (x *CpuUtilizationConfig) GetSmoothingFactor() *wrapperspb.DoubleValue {
+	if x != nil {
+		return x.SmoothingFactor
+	}
+	return nil
+}
+
 var File_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_proto protoreflect.FileDescriptor
 
 const file_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/resource_monitors/cpu_utilization/v3/cpu_utilization.proto\x125envoy.extensions.resource_monitors.cpu_utilization.v3\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xd4\x01\n" +
+	"Kenvoy/extensions/resource_monitors/cpu_utilization/v3/cpu_utilization.proto\x125envoy.extensions.resource_monitors.cpu_utilization.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xb6\x02\n" +
 	"\x14CpuUtilizationConfig\x12\x84\x01\n" +
-	"\x04mode\x18\x01 \x01(\x0e2f.envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.UtilizationComputeStrategyB\b\xfaB\x05\x82\x01\x02\x10\x01R\x04mode\"5\n" +
+	"\x04mode\x18\x01 \x01(\x0e2f.envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.UtilizationComputeStrategyB\b\xfaB\x05\x82\x01\x02\x10\x01R\x04mode\x12`\n" +
+	"\x10smoothing_factor\x18\x02 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?!\x00\x00\x00\x00\x00\x00\x00\x00R\x0fsmoothingFactor\"5\n" +
 	"\x1aUtilizationComputeStrategy\x12\b\n" +
 	"\x04HOST\x10\x00\x12\r\n" +
 	"\tCONTAINER\x10\x01B\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
@@ -145,14 +159,16 @@ var file_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_p
 var file_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_proto_goTypes = []any{
 	(CpuUtilizationConfig_UtilizationComputeStrategy)(0), // 0: envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.UtilizationComputeStrategy
 	(*CpuUtilizationConfig)(nil),                         // 1: envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig
+	(*wrapperspb.DoubleValue)(nil),                       // 2: google.protobuf.DoubleValue
 }
 var file_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_proto_depIdxs = []int32{
 	0, // 0: envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.mode:type_name -> envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.UtilizationComputeStrategy
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: envoy.extensions.resource_monitors.cpu_utilization.v3.CpuUtilizationConfig.smoothing_factor:type_name -> google.protobuf.DoubleValue
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_resource_monitors_cpu_utilization_v3_cpu_utilization_proto_init() }
