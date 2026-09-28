@@ -71,7 +71,7 @@ func (m *ConnectionLimit) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error)
 			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(encoded)))
 		}
 		i--
-		dAtA[i] = 0x32
+		dAtA[i] = 0x2a
 	}
 	if m.RuntimeEnabled != nil {
 		if vtmsg, ok := interface{}(m.RuntimeEnabled).(interface {

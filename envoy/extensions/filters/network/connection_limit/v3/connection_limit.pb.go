@@ -27,7 +27,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// [#next-free-field: 7]
+// [#next-free-field: 6]
 type ConnectionLimit struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The prefix to use when emitting :ref:`statistics
@@ -51,7 +51,7 @@ type ConnectionLimit struct {
 	// manager refresh tick, shared by every filter chain of the listener that joins it. Set
 	// “max“ in this block to keep a hard ceiling. When no budget with that name is configured,
 	// “max_connections“ applies and a warning is logged.
-	ListenerBudget *v31.ListenerBudgetParticipant `protobuf:"bytes,6,opt,name=listener_budget,json=listenerBudget,proto3" json:"listener_budget,omitempty"`
+	ListenerBudget *v31.ListenerBudgetParticipant `protobuf:"bytes,5,opt,name=listener_budget,json=listenerBudget,proto3" json:"listener_budget,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -125,14 +125,14 @@ var File_envoy_extensions_filters_network_connection_limit_v3_connection_limit_p
 
 const file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\x98\x03\n" +
+	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xff\x02\n" +
 	"\x0fConnectionLimit\x12(\n" +
 	"\vstat_prefix\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\n" +
 	"statPrefix\x12N\n" +
 	"\x0fmax_connections\x18\x02 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12/\n" +
 	"\x05delay\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x05delay\x12Q\n" +
 	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabled\x12n\n" +
-	"\x0flistener_budget\x18\x06 \x01(\v2E.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipantR\x0elistenerBudgetJ\x04\b\x05\x10\x06R\x11connection_budgetB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x0flistener_budget\x18\x05 \x01(\v2E.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipantR\x0elistenerBudgetB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"Bio.envoyproxy.envoy.extensions.filters.network.connection_limit.v3B\x14ConnectionLimitProtoP\x01Zngithub.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/connection_limit/v3;connection_limitv3b\x06proto3"
 
 var (
