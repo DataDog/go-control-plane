@@ -8,6 +8,7 @@ package cpu_utilizationv3
 
 import (
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
+	wrapperspb "github.com/planetscale/vtprotobuf/types/known/wrapperspb"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
@@ -48,6 +49,16 @@ func (m *CpuUtilizationConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, e
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.SmoothingFactor != nil {
+		size, err := (*wrapperspb.DoubleValue)(m.SmoothingFactor).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
+	}
 	if m.Mode != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Mode))
 		i--
@@ -64,6 +75,10 @@ func (m *CpuUtilizationConfig) SizeVT() (n int) {
 	_ = l
 	if m.Mode != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Mode))
+	}
+	if m.SmoothingFactor != nil {
+		l = (*wrapperspb.DoubleValue)(m.SmoothingFactor).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
 	return n

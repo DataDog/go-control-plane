@@ -69,6 +69,21 @@ func (m *CpuUtilizationConfig) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
+	if wrapper := m.GetSmoothingFactor(); wrapper != nil {
+
+		if val := wrapper.GetValue(); val <= 0 || val > 1 {
+			err := CpuUtilizationConfigValidationError{
+				field:  "SmoothingFactor",
+				reason: "value must be inside range (0, 1]",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
 	if len(errors) > 0 {
 		return CpuUtilizationConfigMultiError(errors)
 	}

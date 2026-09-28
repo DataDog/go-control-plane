@@ -9,6 +9,7 @@ package connection_limitv3
 import (
 	_ "github.com/cncf/xds/go/udpa/annotations"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v31 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/listener_budget/v3"
 	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -43,10 +44,16 @@ type ConnectionLimit struct {
 	Delay *durationpb.Duration `protobuf:"bytes,3,opt,name=delay,proto3" json:"delay,omitempty"`
 	// Runtime flag that controls whether the filter is enabled or not. If not specified, defaults
 	// to enabled.
-	RuntimeEnabled   *v3.RuntimeFeatureFlag            `protobuf:"bytes,4,opt,name=runtime_enabled,json=runtimeEnabled,proto3" json:"runtime_enabled,omitempty"`
-	ConnectionBudget *ConnectionLimit_ConnectionBudget `protobuf:"bytes,5,opt,name=connection_budget,json=connectionBudget,proto3" json:"connection_budget,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	RuntimeEnabled *v3.RuntimeFeatureFlag `protobuf:"bytes,4,opt,name=runtime_enabled,json=runtimeEnabled,proto3" json:"runtime_enabled,omitempty"`
+	// Join a :ref:`listener budget
+	// <envoy_v3_api_msg_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig>`.
+	// The budget then replaces “max_connections“ with a limit it recomputes on every overload
+	// manager refresh tick, shared by every filter chain of the listener that joins it. Set
+	// “max“ in this block to keep a hard ceiling. When no budget with that name is configured,
+	// “max_connections“ applies and a warning is logged.
+	ListenerBudget *v31.ListenerBudgetParticipant `protobuf:"bytes,5,opt,name=listener_budget,json=listenerBudget,proto3" json:"listener_budget,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ConnectionLimit) Reset() {
@@ -107,121 +114,9 @@ func (x *ConnectionLimit) GetRuntimeEnabled() *v3.RuntimeFeatureFlag {
 	return nil
 }
 
-func (x *ConnectionLimit) GetConnectionBudget() *ConnectionLimit_ConnectionBudget {
+func (x *ConnectionLimit) GetListenerBudget() *v31.ListenerBudgetParticipant {
 	if x != nil {
-		return x.ConnectionBudget
-	}
-	return nil
-}
-
-// Opt this filter into a named, dynamically-rebalanced connection budget managed by the
-// :ref:`envoy.resource_monitors.per_listener_downstream_connections
-// <envoy_v3_api_msg_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig>`
-// resource monitor. When set and a budget with the matching “name“ is configured in the
-// overload manager, the rebalancer overrides this filter's “max_connections“ on every
-// overload manager refresh tick. When absent, the filter runs with the static
-// “max_connections“ above and is unaffected by any monitor.
-//
-// Note on “stat_prefix“: chains on the same listener that join the same budget must share the
-// same “stat_prefix“ — they form one budget participant and admit connections against one
-// shared counter and ceiling. They should also declare identical “weight“,
-// “min_connections“ and “max_connections“; if they differ, the most recently registered
-// chain's values win and a warning is logged (this is what lets an LDS update change the values
-// while the previous chain is still draining). Two different listeners, however, must each use
-// a distinct “stat_prefix“ when joining the same budget. A cross-listener collision (typo /
-// copy-paste) is rejected at listener warm with an “EnvoyException“; the two listeners would
-// otherwise silently pool their quota under a single participant and lose tenant isolation.
-type ConnectionLimit_ConnectionBudget struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of the budget to join. Must match the “name“ field of a configured
-	// “PerListenerDownstreamConnectionsConfig“.
-	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Share of the budget's slack this listener receives, relative to the other participating
-	// listeners' weights, in [0.0, 1.0]. The slack is what remains once every listener's floor,
-	// current usage and safety margin are covered; with the default “weight = 1.0“ on every
-	// listener it is split evenly, so a quiet listener keeps the same headroom for a burst as a
-	// busy one. The weight never scales a listener's floor, usage or margin.
-	//
-	// An explicit “weight: 0.0“ is distinguishable from unset: the listener never receives
-	// slack, and once the budget is under pressure (see
-	// :ref:`PerListenerDownstreamConnectionsConfig.pressure_threshold
-	// <envoy_v3_api_field_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig.pressure_threshold>`)
-	// it is fully evicted: the budget grants it zero, floor included.
-	Weight *wrapperspb.DoubleValue `protobuf:"bytes,2,opt,name=weight,proto3" json:"weight,omitempty"`
-	// Optional hard ceiling on the per-listener allocation. If set, the budget will never
-	// assign this listener more than “max_connections“. Capacity that would have exceeded the
-	// ceiling flows back into the budget within the same rebalance pass and is distributed to
-	// other participating listeners that still have headroom (no stranded capacity except when
-	// every uncapped listener is itself saturated). Must be “>=“ the listener's floor
-	// (“min_connections“ if set, else the budget's “min_listener_quota“); rejected at filter
-	// registration otherwise.
-	MaxConnections *wrapperspb.UInt64Value `protobuf:"bytes,3,opt,name=max_connections,json=maxConnections,proto3" json:"max_connections,omitempty"`
-	// Optional per-listener floor, overriding the budget's
-	// :ref:`min_listener_quota
-	// <envoy_v3_api_field_extensions.resource_monitors.per_listener_downstream_connections.v3.PerListenerDownstreamConnectionsConfig.min_listener_quota>`.
-	// The listener is granted at least this many connections whenever the budget can cover the
-	// sum of all floors, idle or not. Size it to the burst the listener must absorb inside one
-	// overload manager refresh tick. Adding a listener whose floor pushes the sum of floors above
-	// “total_connections“ is rejected at registration.
-	MinConnections *wrapperspb.UInt64Value `protobuf:"bytes,4,opt,name=min_connections,json=minConnections,proto3" json:"min_connections,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *ConnectionLimit_ConnectionBudget) Reset() {
-	*x = ConnectionLimit_ConnectionBudget{}
-	mi := &file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ConnectionLimit_ConnectionBudget) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ConnectionLimit_ConnectionBudget) ProtoMessage() {}
-
-func (x *ConnectionLimit_ConnectionBudget) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ConnectionLimit_ConnectionBudget.ProtoReflect.Descriptor instead.
-func (*ConnectionLimit_ConnectionBudget) Descriptor() ([]byte, []int) {
-	return file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDescGZIP(), []int{0, 0}
-}
-
-func (x *ConnectionLimit_ConnectionBudget) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ConnectionLimit_ConnectionBudget) GetWeight() *wrapperspb.DoubleValue {
-	if x != nil {
-		return x.Weight
-	}
-	return nil
-}
-
-func (x *ConnectionLimit_ConnectionBudget) GetMaxConnections() *wrapperspb.UInt64Value {
-	if x != nil {
-		return x.MaxConnections
-	}
-	return nil
-}
-
-func (x *ConnectionLimit_ConnectionBudget) GetMinConnections() *wrapperspb.UInt64Value {
-	if x != nil {
-		return x.MinConnections
+		return x.ListenerBudget
 	}
 	return nil
 }
@@ -230,19 +125,14 @@ var File_envoy_extensions_filters_network_connection_limit_v3_connection_limit_p
 
 const file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xb6\x05\n" +
+	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xff\x02\n" +
 	"\x0fConnectionLimit\x12(\n" +
 	"\vstat_prefix\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\n" +
 	"statPrefix\x12N\n" +
 	"\x0fmax_connections\x18\x02 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12/\n" +
 	"\x05delay\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x05delay\x12Q\n" +
-	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabled\x12\x83\x01\n" +
-	"\x11connection_budget\x18\x05 \x01(\v2V.envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudgetR\x10connectionBudget\x1a\x9e\x02\n" +
-	"\x10ConnectionBudget\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x12M\n" +
-	"\x06weight\x18\x02 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x06weight\x12N\n" +
-	"\x0fmax_connections\x18\x03 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12N\n" +
-	"\x0fmin_connections\x18\x04 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0eminConnectionsB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabled\x12n\n" +
+	"\x0flistener_budget\x18\x05 \x01(\v2E.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipantR\x0elistenerBudgetB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"Bio.envoyproxy.envoy.extensions.filters.network.connection_limit.v3B\x14ConnectionLimitProtoP\x01Zngithub.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/connection_limit/v3;connection_limitv3b\x06proto3"
 
 var (
@@ -257,28 +147,24 @@ func file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_
 	return file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDescData
 }
 
-var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_goTypes = []any{
-	(*ConnectionLimit)(nil),                  // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit
-	(*ConnectionLimit_ConnectionBudget)(nil), // 1: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget
-	(*wrapperspb.UInt64Value)(nil),           // 2: google.protobuf.UInt64Value
-	(*durationpb.Duration)(nil),              // 3: google.protobuf.Duration
-	(*v3.RuntimeFeatureFlag)(nil),            // 4: envoy.config.core.v3.RuntimeFeatureFlag
-	(*wrapperspb.DoubleValue)(nil),           // 5: google.protobuf.DoubleValue
+	(*ConnectionLimit)(nil),               // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit
+	(*wrapperspb.UInt64Value)(nil),        // 1: google.protobuf.UInt64Value
+	(*durationpb.Duration)(nil),           // 2: google.protobuf.Duration
+	(*v3.RuntimeFeatureFlag)(nil),         // 3: envoy.config.core.v3.RuntimeFeatureFlag
+	(*v31.ListenerBudgetParticipant)(nil), // 4: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
 }
 var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_depIdxs = []int32{
-	2, // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.max_connections:type_name -> google.protobuf.UInt64Value
-	3, // 1: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.delay:type_name -> google.protobuf.Duration
-	4, // 2: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.runtime_enabled:type_name -> envoy.config.core.v3.RuntimeFeatureFlag
-	1, // 3: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.connection_budget:type_name -> envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget
-	5, // 4: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.weight:type_name -> google.protobuf.DoubleValue
-	2, // 5: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.max_connections:type_name -> google.protobuf.UInt64Value
-	2, // 6: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.ConnectionBudget.min_connections:type_name -> google.protobuf.UInt64Value
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	1, // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.max_connections:type_name -> google.protobuf.UInt64Value
+	2, // 1: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.delay:type_name -> google.protobuf.Duration
+	3, // 2: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.runtime_enabled:type_name -> envoy.config.core.v3.RuntimeFeatureFlag
+	4, // 3: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.listener_budget:type_name -> envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_init() }
@@ -292,7 +178,7 @@ func file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc), len(file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
