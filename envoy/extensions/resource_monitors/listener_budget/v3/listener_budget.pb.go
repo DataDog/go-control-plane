@@ -55,7 +55,7 @@ const (
 //     pressure: “LOW“ over “[0, default_squeeze_start]“, “DEFAULT“ over
 //     “[default_squeeze_start, 1]“. With “s“ the pressure mapped from the class's band to
 //     “[0, 1]“, the total usage of the class's participants of each unit is reduced by
-//     “s * max_decrease“ per tick, taken only from the participants above their weighted max-min
+//     “s * max_decrease“ per tick, taken only from the participants above their max-min
 //     fair share, which are cut to that share. Usage above “L“, such as connections rejected and
 //     waiting to close, does not count. “LOW“ participants sit at their floor once “p“ reaches
 //     “default_squeeze_start“, and below their share they keep their usage with no headroom.
