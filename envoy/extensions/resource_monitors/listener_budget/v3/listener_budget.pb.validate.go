@@ -110,12 +110,27 @@ func (m *ListenerBudgetConfig) validate(all bool) error {
 
 	}
 
-	if wrapper := m.GetLiveSqueezeStart(); wrapper != nil {
+	if wrapper := m.GetDefaultSqueezeStart(); wrapper != nil {
 
 		if val := wrapper.GetValue(); val < 0 || val >= 1 {
 			err := ListenerBudgetConfigValidationError{
-				field:  "LiveSqueezeStart",
+				field:  "DefaultSqueezeStart",
 				reason: "value must be inside range [0, 1)",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
+	if wrapper := m.GetRampHeadroomFactor(); wrapper != nil {
+
+		if wrapper.GetValue() < 0 {
+			err := ListenerBudgetConfigValidationError{
+				field:  "RampHeadroomFactor",
+				reason: "value must be greater than or equal to 0",
 			}
 			if !all {
 				return err

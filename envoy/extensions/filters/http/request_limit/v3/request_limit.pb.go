@@ -31,7 +31,8 @@ const (
 // “request_limit_exceeded“). HTTP/2 and HTTP/3 multiplex many requests on one connection, so a
 // connection limit alone does not bound their load; this filter does.
 //
-// Emitted statistics, rooted at “<stat_prefix of the HTTP connection manager>request_limit.<stat_prefix>.“:
+// Emitted statistics, rooted at
+// “<stat_prefix of the HTTP connection manager>request_limit.<stat_prefix>.“:
 // counter “limited_requests“ and gauge “active_requests“.
 type RequestLimit struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
