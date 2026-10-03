@@ -48,20 +48,40 @@ const (
 // On each tick, with “u“ the participant's peak usage since the previous tick and “L“ its
 // current limit, all limits clamped to the participant's “[min, max]“:
 //
-//   - Pressure 0: “L“ becomes “u + burst_headroom“, and “L * growth_factor“ if “u“ reached
+//   - Pressure 0: “L“ becomes “u + max(burst_headroom, ramp_headroom_factor * (u - u'))“, with
+//     “u'“ the peak usage of the previous tick, and at least “L * growth_factor“ if “u“ reached
 //     “L“ (the participant was rejecting).
-//   - Pressure “p“ above 0: no limit grows. “LOW“ participants are cut by
-//     “min(1, p / live_squeeze_start) * max_decrease“ of their usage per tick and sit at their
-//     floor once “p“ reaches “live_squeeze_start“. Beyond that point, the total usage of the
-//     “LIVE“ participants of each unit is reduced by “s * max_decrease“ per tick, with “s“ the
-//     pressure rescaled from “[live_squeeze_start, 1]“ to “[0, 1]“, taken only from the
-//     participants above their weighted max-min fair share.
+//   - Pressure “p“ above 0: no limit grows. Each priority class is squeezed within its own band of
+//     pressure: “LOW“ over “[0, default_squeeze_start]“, “DEFAULT“ over
+//     “[default_squeeze_start, 1]“. With “s“ the pressure mapped from the class's band to
+//     “[0, 1]“, the total usage of the class's participants of each unit is reduced by
+//     “s * max_decrease“ per tick, taken only from the participants above their max-min
+//     fair share, which are cut to that share. Usage above “L“, such as connections rejected and
+//     waiting to close, does not count. “LOW“ participants sit at their floor once “p“ reaches
+//     “default_squeeze_start“, and below their share they keep their usage with no headroom.
+//     “DEFAULT“ participants below their share, or whose band is not reached yet, keep
+//     “u + burst_headroom“, without growing above “L“.
 //
-// The budget reads the action on its refresh tick, i.e. one tick after the trigger fired. The
-// monitor reports that pressure as its own resource usage; do not trigger actions on it.
+// The overload manager polls the monitor on every refresh tick, which is when the budget reads the
+// action and recomputes the limits: one tick after the trigger fired. The monitor measures no
+// resource of its own and always reports a pressure of 0, so a trigger on it never fires; the
+// budget reports the pressure it read in its “pressure_percent“ gauge.
+//
+// A listener that sets :ref:`bypass_overload_manager
+// <envoy_v3_api_field_config.listener.v3.Listener.bypass_overload_manager>` is treated the way the
+// null overload manager treats it elsewhere: for its participants the pressure is always 0, just
+// as its HTTP connection manager ignores “envoy.overload_actions.stop_accepting_requests“. Such
+// a listener still enforces a budget limit, but that limit only follows its peak usage plus
+// “burst_headroom“ and grows when hit, within “[min, max]“. It is never frozen or squeezed,
+// and its usage is not part of the fair share that the other participants are squeezed towards.
+// Its “limit“ and “usage“ gauges are still reported. The pressure itself is read from
+// the server's overload manager, so bypassing listeners do not change what the other participants
+// see. As always, “bypass_overload_manager“ also takes the listener out of
+// :ref:`global_downstream_max_connections <config_overload_manager_limiting_connections>`
+// accounting.
 //
 // At most one “envoy.resource_monitors.listener_budget“ monitor can be configured per bootstrap.
-// [#next-free-field: 6]
+// [#next-free-field: 7]
 type ListenerBudgetConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the budget, used by the filters to join it.
@@ -74,11 +94,24 @@ type ListenerBudgetConfig struct {
 	GrowthFactor *wrapperspb.DoubleValue `protobuf:"bytes,3,opt,name=growth_factor,json=growthFactor,proto3" json:"growth_factor,omitempty"`
 	// Fraction of usage removed per tick at full pressure. Defaults to 0.25.
 	MaxDecrease *wrapperspb.DoubleValue `protobuf:"bytes,4,opt,name=max_decrease,json=maxDecrease,proto3" json:"max_decrease,omitempty"`
-	// Pressure at which “LOW“ participants reach their floor and “LIVE“ participants start
+	// Pressure at which “LOW“ participants reach their floor and “DEFAULT“ participants start
 	// being squeezed. Defaults to 0.5.
-	LiveSqueezeStart *wrapperspb.DoubleValue `protobuf:"bytes,5,opt,name=live_squeeze_start,json=liveSqueezeStart,proto3" json:"live_squeeze_start,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	DefaultSqueezeStart *wrapperspb.DoubleValue `protobuf:"bytes,5,opt,name=default_squeeze_start,json=defaultSqueezeStart,proto3" json:"default_squeeze_start,omitempty"`
+	// On a tick without pressure, the room granted above a participant's peak usage is this factor
+	// times the increase of that peak usage over the previous tick, when larger than
+	// “burst_headroom“. It keeps a steady ramp faster than “burst_headroom“ per tick under its
+	// limit: with “u + burst_headroom“ only, the limit grown on a saturated tick falls back below
+	// the next tick's usage, and the ramp is rejected on every other tick. With “burst_headroom“
+	// 1000 and this factor at 0, a burst of 10,000 connections at about 2,200 per 250 ms tick saw
+	// its limit go 1560, 3120, 6240, 6338, 12676, 9571, 19142: rejections on the second, third,
+	// fifth and seventh ticks. With 2.0, a steady model of that burst gets 1680, 3920, 8280, 10480,
+	// 12680, 13440 and is rejected on the second tick only. The limit is back to
+	// “u + burst_headroom“ on the first tick in which the peak usage grows by at most
+	// “burst_headroom / ramp_headroom_factor“. Ignored under pressure. 0 disables it. Defaults to
+	// 2.0.
+	RampHeadroomFactor *wrapperspb.DoubleValue `protobuf:"bytes,6,opt,name=ramp_headroom_factor,json=rampHeadroomFactor,proto3" json:"ramp_headroom_factor,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ListenerBudgetConfig) Reset() {
@@ -139,9 +172,16 @@ func (x *ListenerBudgetConfig) GetMaxDecrease() *wrapperspb.DoubleValue {
 	return nil
 }
 
-func (x *ListenerBudgetConfig) GetLiveSqueezeStart() *wrapperspb.DoubleValue {
+func (x *ListenerBudgetConfig) GetDefaultSqueezeStart() *wrapperspb.DoubleValue {
 	if x != nil {
-		return x.LiveSqueezeStart
+		return x.DefaultSqueezeStart
+	}
+	return nil
+}
+
+func (x *ListenerBudgetConfig) GetRampHeadroomFactor() *wrapperspb.DoubleValue {
+	if x != nil {
+		return x.RampHeadroomFactor
 	}
 	return nil
 }
@@ -150,13 +190,14 @@ var File_envoy_extensions_resource_monitors_listener_budget_v3_listener_budget_p
 
 const file_envoy_extensions_resource_monitors_listener_budget_v3_listener_budget_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/resource_monitors/listener_budget/v3/listener_budget.proto\x125envoy.extensions.resource_monitors.listener_budget.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\x84\x03\n" +
+	"Kenvoy/extensions/resource_monitors/listener_budget/v3/listener_budget.proto\x125envoy.extensions.resource_monitors.listener_budget.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xea\x03\n" +
 	"\x14ListenerBudgetConfig\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x12=\n" +
 	"\x16default_burst_headroom\x18\x02 \x01(\x04B\a\xfaB\x042\x02 \x00R\x14defaultBurstHeadroom\x12Q\n" +
 	"\rgrowth_factor\x18\x03 \x01(\v2\x1c.google.protobuf.DoubleValueB\x0e\xfaB\v\x12\t)\x00\x00\x00\x00\x00\x00\xf0?R\fgrowthFactor\x12X\n" +
-	"\fmax_decrease\x18\x04 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?!\x00\x00\x00\x00\x00\x00\x00\x00R\vmaxDecrease\x12c\n" +
-	"\x12live_squeeze_start\x18\x05 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x11\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x10liveSqueezeStartB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\fmax_decrease\x18\x04 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x19\x00\x00\x00\x00\x00\x00\xf0?!\x00\x00\x00\x00\x00\x00\x00\x00R\vmaxDecrease\x12i\n" +
+	"\x15default_squeeze_start\x18\x05 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x11\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x13defaultSqueezeStart\x12^\n" +
+	"\x14ramp_headroom_factor\x18\x06 \x01(\v2\x1c.google.protobuf.DoubleValueB\x0e\xfaB\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\x12rampHeadroomFactorB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"Cio.envoyproxy.envoy.extensions.resource_monitors.listener_budget.v3B\x13ListenerBudgetProtoP\x01Zngithub.com/envoyproxy/go-control-plane/envoy/extensions/resource_monitors/listener_budget/v3;listener_budgetv3b\x06proto3"
 
 var (
@@ -179,12 +220,13 @@ var file_envoy_extensions_resource_monitors_listener_budget_v3_listener_budget_p
 var file_envoy_extensions_resource_monitors_listener_budget_v3_listener_budget_proto_depIdxs = []int32{
 	1, // 0: envoy.extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.growth_factor:type_name -> google.protobuf.DoubleValue
 	1, // 1: envoy.extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.max_decrease:type_name -> google.protobuf.DoubleValue
-	1, // 2: envoy.extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.live_squeeze_start:type_name -> google.protobuf.DoubleValue
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	1, // 2: envoy.extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.default_squeeze_start:type_name -> google.protobuf.DoubleValue
+	1, // 3: envoy.extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.ramp_headroom_factor:type_name -> google.protobuf.DoubleValue
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_resource_monitors_listener_budget_v3_listener_budget_proto_init() }

@@ -24,25 +24,31 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Order in which participants are squeezed under pressure. Each class has its own pressure band
+// (see :ref:`default_squeeze_start
+// <envoy_v3_api_field_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.default_squeeze_start>`),
+// so a class is only squeezed once every class shed before it sits at its floor.
 type ListenerBudgetParticipant_Priority int32
 
 const (
-	// Live traffic. Squeezed only once every “LOW“ participant is at its floor, and then only
-	// when using more than its weighted fair share.
-	ListenerBudgetParticipant_LIVE ListenerBudgetParticipant_Priority = 0
-	// Traffic that must never hurt live traffic. Squeezed first under pressure, down to “min“.
+	// Squeezed once every “LOW“ participant is at its floor, and then only when using more than
+	// its fair share.
+	ListenerBudgetParticipant_DEFAULT ListenerBudgetParticipant_Priority = 0
+	// Traffic that can be shed, such as retries, replays or batch work, and must not hurt
+	// “DEFAULT“ traffic. Squeezed first under pressure, down to “min“, and granted no headroom
+	// above its usage while the pressure is above 0.
 	ListenerBudgetParticipant_LOW ListenerBudgetParticipant_Priority = 1
 )
 
 // Enum value maps for ListenerBudgetParticipant_Priority.
 var (
 	ListenerBudgetParticipant_Priority_name = map[int32]string{
-		0: "LIVE",
+		0: "DEFAULT",
 		1: "LOW",
 	}
 	ListenerBudgetParticipant_Priority_value = map[string]int32{
-		"LIVE": 0,
-		"LOW":  1,
+		"DEFAULT": 0,
+		"LOW":     1,
 	}
 )
 
@@ -78,32 +84,47 @@ func (ListenerBudgetParticipant_Priority) EnumDescriptor() ([]byte, []int) {
 // <envoy_v3_api_msg_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig>`
 // resource monitor. Every filter chain of a listener that joins with the same kind of filter forms
 // one participant: the chains admit against one shared counter and one limit, which the budget
-// recomputes on every overload manager refresh tick. Chains of one listener should declare
-// identical settings; when they differ, the most recent registration wins.
+// recomputes on every overload manager refresh tick. The budget therefore isolates and prioritizes
+// listeners from one another, not the virtual hosts or routes served by one listener. Only named
+// listeners can join: a filter that joins from a listener without a name is rejected.
 //
-// Without pressure, a participant's limit follows its peak usage plus “burst_headroom“, and a
-// participant that reached its limit gets it multiplied by the budget's “growth_factor“ on the
-// next tick. Under pressure, limits stop growing and are squeezed: “LOW“ participants first,
-// down to “min“, then the “LIVE“ participants using more than their weighted fair share.
-// [#next-free-field: 7]
+// The participant's settings are those of the listener's most recently created filter chain. This
+// is how a listener update, including a filter chain only update, changes them: the new filter
+// chains apply their settings to the whole listener while the previous ones drain. Declare
+// identical settings on every filter chain of a listener; when the chains of one listener
+// configuration differ, the settings that apply depend on the order in which the chains are
+// created.
+//
+// Without pressure, a participant's limit follows its peak usage plus “burst_headroom“, or plus
+// the budget's “ramp_headroom_factor“ times the increase of that peak usage over the previous
+// tick when larger, and a participant that reached its limit gets it multiplied by the budget's
+// “growth_factor“ on the next tick. Under pressure, limits stop growing and each priority class
+// is squeezed within its own pressure band: “LOW“ participants first, down to “min“, then the
+// “DEFAULT“ ones. Within a class, only the participants using more than their fair share of the
+// class's usage are cut.
+//
+// On a listener that sets :ref:`bypass_overload_manager
+// <envoy_v3_api_field_config.listener.v3.Listener.bypass_overload_manager>`, the participant
+// always sees a pressure of 0: its limit keeps following its usage and growing within
+// “[min, max]“, it is never squeezed, and its usage is left out of the fair share of the other
+// participants.
+// [#next-free-field: 6]
 type ListenerBudgetParticipant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the budget to join: the “name“ of the “ListenerBudgetConfig“.
 	BudgetName string `protobuf:"bytes,1,opt,name=budget_name,json=budgetName,proto3" json:"budget_name,omitempty"`
 	// Priority class of this participant.
 	Priority ListenerBudgetParticipant_Priority `protobuf:"varint,2,opt,name=priority,proto3,enum=envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant_Priority" json:"priority,omitempty"`
-	// Weight of this participant in the fair share computed among “LIVE“ participants of the same
-	// unit under pressure. Defaults to 1.0.
-	Weight *wrapperspb.DoubleValue `protobuf:"bytes,3,opt,name=weight,proto3" json:"weight,omitempty"`
 	// Floor: the limit never goes below this value, under pressure included. Defaults to 0.
-	Min uint64 `protobuf:"varint,4,opt,name=min,proto3" json:"min,omitempty"`
+	Min uint64 `protobuf:"varint,3,opt,name=min,proto3" json:"min,omitempty"`
 	// Cap: the limit never goes above this value. Must be greater than or equal to “min“. No cap
 	// when unset.
-	Max *wrapperspb.UInt64Value `protobuf:"bytes,5,opt,name=max,proto3" json:"max,omitempty"`
+	Max *wrapperspb.UInt64Value `protobuf:"bytes,4,opt,name=max,proto3" json:"max,omitempty"`
 	// Room granted above the participant's peak usage, in its own unit (connections or requests).
-	// A burst larger than this within one refresh tick is rejected on this listener only. Defaults
-	// to the budget's “default_burst_headroom“.
-	BurstHeadroom *wrapperspb.UInt64Value `protobuf:"bytes,6,opt,name=burst_headroom,json=burstHeadroom,proto3" json:"burst_headroom,omitempty"`
+	// A burst larger than this within one refresh tick, on a listener whose usage was not already
+	// ramping faster, is rejected on this listener only. Defaults to the budget's
+	// “default_burst_headroom“.
+	BurstHeadroom *wrapperspb.UInt64Value `protobuf:"bytes,5,opt,name=burst_headroom,json=burstHeadroom,proto3" json:"burst_headroom,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -149,14 +170,7 @@ func (x *ListenerBudgetParticipant) GetPriority() ListenerBudgetParticipant_Prio
 	if x != nil {
 		return x.Priority
 	}
-	return ListenerBudgetParticipant_LIVE
-}
-
-func (x *ListenerBudgetParticipant) GetWeight() *wrapperspb.DoubleValue {
-	if x != nil {
-		return x.Weight
-	}
-	return nil
+	return ListenerBudgetParticipant_DEFAULT
 }
 
 func (x *ListenerBudgetParticipant) GetMin() uint64 {
@@ -184,17 +198,16 @@ var File_envoy_extensions_common_listener_budget_v3_listener_budget_proto protor
 
 const file_envoy_extensions_common_listener_budget_v3_listener_budget_proto_rawDesc = "" +
 	"\n" +
-	"@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x12*envoy.extensions.common.listener_budget.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xb9\x03\n" +
+	"@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x12*envoy.extensions.common.listener_budget.v3\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xf6\x02\n" +
 	"\x19ListenerBudgetParticipant\x12(\n" +
 	"\vbudget_name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\n" +
 	"budgetName\x12t\n" +
-	"\bpriority\x18\x02 \x01(\x0e2N.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.PriorityB\b\xfaB\x05\x82\x01\x02\x10\x01R\bpriority\x12D\n" +
-	"\x06weight\x18\x03 \x01(\v2\x1c.google.protobuf.DoubleValueB\x0e\xfaB\v\x12\t!\x00\x00\x00\x00\x00\x00\x00\x00R\x06weight\x12\x10\n" +
-	"\x03min\x18\x04 \x01(\x04R\x03min\x127\n" +
-	"\x03max\x18\x05 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x03max\x12L\n" +
-	"\x0eburst_headroom\x18\x06 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\rburstHeadroom\"\x1d\n" +
-	"\bPriority\x12\b\n" +
-	"\x04LIVE\x10\x00\x12\a\n" +
+	"\bpriority\x18\x02 \x01(\x0e2N.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.PriorityB\b\xfaB\x05\x82\x01\x02\x10\x01R\bpriority\x12\x10\n" +
+	"\x03min\x18\x03 \x01(\x04R\x03min\x127\n" +
+	"\x03max\x18\x04 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x03max\x12L\n" +
+	"\x0eburst_headroom\x18\x05 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\rburstHeadroom\" \n" +
+	"\bPriority\x12\v\n" +
+	"\aDEFAULT\x10\x00\x12\a\n" +
 	"\x03LOW\x10\x01B\xbe\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"8io.envoyproxy.envoy.extensions.common.listener_budget.v3B\x13ListenerBudgetProtoP\x01Zcgithub.com/envoyproxy/go-control-plane/envoy/extensions/common/listener_budget/v3;listener_budgetv3b\x06proto3"
 
@@ -215,19 +228,17 @@ var file_envoy_extensions_common_listener_budget_v3_listener_budget_proto_msgTyp
 var file_envoy_extensions_common_listener_budget_v3_listener_budget_proto_goTypes = []any{
 	(ListenerBudgetParticipant_Priority)(0), // 0: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.Priority
 	(*ListenerBudgetParticipant)(nil),       // 1: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
-	(*wrapperspb.DoubleValue)(nil),          // 2: google.protobuf.DoubleValue
-	(*wrapperspb.UInt64Value)(nil),          // 3: google.protobuf.UInt64Value
+	(*wrapperspb.UInt64Value)(nil),          // 2: google.protobuf.UInt64Value
 }
 var file_envoy_extensions_common_listener_budget_v3_listener_budget_proto_depIdxs = []int32{
 	0, // 0: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.priority:type_name -> envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.Priority
-	2, // 1: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.weight:type_name -> google.protobuf.DoubleValue
-	3, // 2: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.max:type_name -> google.protobuf.UInt64Value
-	3, // 3: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.burst_headroom:type_name -> google.protobuf.UInt64Value
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	2, // 1: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.max:type_name -> google.protobuf.UInt64Value
+	2, // 2: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant.burst_headroom:type_name -> google.protobuf.UInt64Value
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_common_listener_budget_v3_listener_budget_proto_init() }

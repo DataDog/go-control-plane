@@ -80,21 +80,6 @@ func (m *ListenerBudgetParticipant) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
-	if wrapper := m.GetWeight(); wrapper != nil {
-
-		if wrapper.GetValue() <= 0 {
-			err := ListenerBudgetParticipantValidationError{
-				field:  "Weight",
-				reason: "value must be greater than 0",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-	}
-
 	// no validation rules for Min
 
 	if wrapper := m.GetMax(); wrapper != nil {

@@ -57,7 +57,7 @@ func (m *ListenerBudgetParticipant) MarshalToSizedBufferVTStrict(dAtA []byte) (i
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x32
+		dAtA[i] = 0x2a
 	}
 	if m.Max != nil {
 		size, err := (*wrapperspb.UInt64Value)(m.Max).MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -67,22 +67,12 @@ func (m *ListenerBudgetParticipant) MarshalToSizedBufferVTStrict(dAtA []byte) (i
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x2a
+		dAtA[i] = 0x22
 	}
 	if m.Min != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Min))
 		i--
-		dAtA[i] = 0x20
-	}
-	if m.Weight != nil {
-		size, err := (*wrapperspb.DoubleValue)(m.Weight).MarshalToSizedBufferVTStrict(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x18
 	}
 	if m.Priority != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Priority))
@@ -111,10 +101,6 @@ func (m *ListenerBudgetParticipant) SizeVT() (n int) {
 	}
 	if m.Priority != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Priority))
-	}
-	if m.Weight != nil {
-		l = (*wrapperspb.DoubleValue)(m.Weight).SizeVT()
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	if m.Min != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Min))

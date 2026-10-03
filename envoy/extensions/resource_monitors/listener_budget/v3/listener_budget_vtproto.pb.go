@@ -49,8 +49,18 @@ func (m *ListenerBudgetConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, e
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.LiveSqueezeStart != nil {
-		size, err := (*wrapperspb.DoubleValue)(m.LiveSqueezeStart).MarshalToSizedBufferVTStrict(dAtA[:i])
+	if m.RampHeadroomFactor != nil {
+		size, err := (*wrapperspb.DoubleValue)(m.RampHeadroomFactor).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.DefaultSqueezeStart != nil {
+		size, err := (*wrapperspb.DoubleValue)(m.DefaultSqueezeStart).MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
@@ -115,8 +125,12 @@ func (m *ListenerBudgetConfig) SizeVT() (n int) {
 		l = (*wrapperspb.DoubleValue)(m.MaxDecrease).SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	if m.LiveSqueezeStart != nil {
-		l = (*wrapperspb.DoubleValue)(m.LiveSqueezeStart).SizeVT()
+	if m.DefaultSqueezeStart != nil {
+		l = (*wrapperspb.DoubleValue)(m.DefaultSqueezeStart).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.RampHeadroomFactor != nil {
+		l = (*wrapperspb.DoubleValue)(m.RampHeadroomFactor).SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)

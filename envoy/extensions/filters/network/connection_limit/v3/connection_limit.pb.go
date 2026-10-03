@@ -51,6 +51,11 @@ type ConnectionLimit struct {
 	// manager refresh tick, shared by every filter chain of the listener that joins it. Set
 	// “max“ in this block to keep a hard ceiling. When no budget with that name is configured,
 	// “max_connections“ applies and a warning is logged.
+	//
+	// The usage the budget plans against counts every connection the filter holds, including the
+	// rejected connections waiting for their “delay“ to expire, since they still hold a socket.
+	// Usage can therefore exceed the limit; under pressure, the part above the limit is left out of
+	// the fair share.
 	ListenerBudget *v31.ListenerBudgetParticipant `protobuf:"bytes,5,opt,name=listener_budget,json=listenerBudget,proto3" json:"listener_budget,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
