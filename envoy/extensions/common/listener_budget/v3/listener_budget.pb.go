@@ -26,7 +26,7 @@ const (
 
 // Order in which participants are squeezed under pressure. Each class has its own pressure band
 // (see :ref:`default_squeeze_start
-// <envoy_v3_api_field_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig.default_squeeze_start>`),
+// <envoy_v3_api_field_extensions.bootstrap.listener_budget.v3.ListenerBudget.default_squeeze_start>`),
 // so a class is only squeezed once every class shed before it sits at its floor.
 type ListenerBudgetParticipant_Priority int32
 
@@ -80,28 +80,34 @@ func (ListenerBudgetParticipant_Priority) EnumDescriptor() ([]byte, []int) {
 }
 
 // How a filter joins the listener budget declared by the
-// :ref:`envoy.resource_monitors.listener_budget
-// <envoy_v3_api_msg_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig>`
-// resource monitor. Every filter chain of a listener that joins with the same kind of filter forms
-// one participant: the chains admit against one shared counter and one limit, which the budget
-// recomputes on every overload manager refresh tick. The budget therefore isolates and prioritizes
-// listeners from one another, not the virtual hosts or routes served by one listener. Only named
-// listeners can join: a filter that joins from a listener without a name is rejected.
+// :ref:`envoy.bootstrap.listener_budget
+// <envoy_v3_api_msg_extensions.bootstrap.listener_budget.v3.ListenerBudget>`
+// bootstrap extension. Every filter chain that joins with the same participant key and the same
+// unit, connections or requests, forms one participant: the chains admit against one shared counter
+// and one limit, which the budget recomputes on every refresh tick. The participant key is the
+// “stat_prefix“ of the :ref:`connection limit filter <config_network_filters_connection_limit>`,
+// and the “stat_prefix“ of the HTTP connection manager for HTTP filters. Give every listener its own
+// key: the budget then isolates and prioritizes listeners from one another, not the virtual hosts
+// or routes served by one listener. The key names the participant's statistics.
 //
-// The participant's settings are those of the listener's most recently created filter chain. This
-// is how a listener update, including a filter chain only update, changes them: the new filter
-// chains apply their settings to the whole listener while the previous ones drain. Declare
-// identical settings on every filter chain of a listener; when the chains of one listener
-// configuration differ, the settings that apply depend on the order in which the chains are
-// created.
+// The participant's settings are those of its most recently created filter chain. This is how a
+// listener update, including a filter chain only update, changes them: the new filter chains apply
+// their settings to the whole participant while the previous ones drain. A change of settings is
+// logged as a warning. Declare identical settings on every filter chain sharing a participant key;
+// when they differ, the settings that apply depend on the order in which the chains are created.
 //
 // Without pressure, a participant's limit follows its peak usage plus “burst_headroom“, or plus
-// the budget's “ramp_headroom_factor“ times the increase of that peak usage over the previous
-// tick when larger, and a participant that reached its limit gets it multiplied by the budget's
-// “growth_factor“ on the next tick. Under pressure, limits stop growing and each priority class
-// is squeezed within its own pressure band: “LOW“ participants first, down to “min“, then the
-// “DEFAULT“ ones. Within a class, only the participants using more than their fair share of the
-// class's usage are cut.
+// twice the increase of that peak usage over the previous tick when larger, and a participant
+// that reached its limit gets it doubled on the next tick. Under pressure, each priority class is squeezed within its
+// own pressure band: “LOW“ participants first, down to “min“, then the “DEFAULT“ ones. Within
+// a class, only the participants whose demand is above their fair share of the class's demand,
+// reduced according to the pressure, are cut, and a constant pressure keeps their limits constant.
+// “LOW“ limits stop growing as soon as the pressure is above 0. “DEFAULT“ limits keep
+// following their usage plus “burst_headroom“ while the pressure is below their band. Within
+// it, the ones below their fair share grow by at most “burst_headroom * (1 - f)“ per tick, with
+// “f“ the pressure mapped from the band to [0, 1], and not above their share: by the whole
+// headroom where the band starts, and not at all at a pressure of 1. The ones cut to their fair
+// share do not grow until the pressure is back to 0.
 //
 // On a listener that sets :ref:`bypass_overload_manager
 // <envoy_v3_api_field_config.listener.v3.Listener.bypass_overload_manager>`, the participant
@@ -111,7 +117,7 @@ func (ListenerBudgetParticipant_Priority) EnumDescriptor() ([]byte, []int) {
 // [#next-free-field: 6]
 type ListenerBudgetParticipant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of the budget to join: the “name“ of the “ListenerBudgetConfig“.
+	// Name of the budget to join: the “name“ of the “ListenerBudget“.
 	BudgetName string `protobuf:"bytes,1,opt,name=budget_name,json=budgetName,proto3" json:"budget_name,omitempty"`
 	// Priority class of this participant.
 	Priority ListenerBudgetParticipant_Priority `protobuf:"varint,2,opt,name=priority,proto3,enum=envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant_Priority" json:"priority,omitempty"`
