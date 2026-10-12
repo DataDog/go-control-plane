@@ -46,9 +46,10 @@ type ConnectionLimit struct {
 	// to enabled.
 	RuntimeEnabled *v3.RuntimeFeatureFlag `protobuf:"bytes,4,opt,name=runtime_enabled,json=runtimeEnabled,proto3" json:"runtime_enabled,omitempty"`
 	// Join a :ref:`listener budget
-	// <envoy_v3_api_msg_extensions.resource_monitors.listener_budget.v3.ListenerBudgetConfig>`.
-	// The budget then replaces “max_connections“ with a limit it recomputes on every overload
-	// manager refresh tick, shared by every filter chain of the listener that joins it. Set
+	// <envoy_v3_api_msg_extensions.bootstrap.listener_budget.v3.ListenerBudget>`.
+	// The budget then replaces “max_connections“ with a limit it recomputes on every refresh
+	// tick, shared by every filter chain that joins it with the same “stat_prefix“, the
+	// participant key. Give every listener its own “stat_prefix“. Set
 	// “max“ in this block to keep a hard ceiling. When no budget with that name is configured,
 	// “max_connections“ applies and a warning is logged.
 	//
