@@ -247,6 +247,173 @@ var _ interface {
 	ErrorName() string
 } = GradientControllerConfigValidationError{}
 
+// Validate checks the field values on ListenerBudgetControllerConfig with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *ListenerBudgetControllerConfig) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on ListenerBudgetControllerConfig with
+// the rules defined in the proto definition for this message. If any rules
+// are violated, the result is a list of violation errors wrapped in
+// ListenerBudgetControllerConfigMultiError, or nil if none found.
+func (m *ListenerBudgetControllerConfig) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *ListenerBudgetControllerConfig) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	if m.GetParticipant() == nil {
+		err := ListenerBudgetControllerConfigValidationError{
+			field:  "Participant",
+			reason: "value is required",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
+
+	if all {
+		switch v := interface{}(m.GetParticipant()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, ListenerBudgetControllerConfigValidationError{
+					field:  "Participant",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, ListenerBudgetControllerConfigValidationError{
+					field:  "Participant",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetParticipant()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return ListenerBudgetControllerConfigValidationError{
+				field:  "Participant",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if wrapper := m.GetMaxConcurrency(); wrapper != nil {
+
+		if wrapper.GetValue() < 1 {
+			err := ListenerBudgetControllerConfigValidationError{
+				field:  "MaxConcurrency",
+				reason: "value must be greater than or equal to 1",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	} else {
+		err := ListenerBudgetControllerConfigValidationError{
+			field:  "MaxConcurrency",
+			reason: "value is required and must not be nil.",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		return ListenerBudgetControllerConfigMultiError(errors)
+	}
+
+	return nil
+}
+
+// ListenerBudgetControllerConfigMultiError is an error wrapping multiple
+// validation errors returned by ListenerBudgetControllerConfig.ValidateAll()
+// if the designated constraints aren't met.
+type ListenerBudgetControllerConfigMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m ListenerBudgetControllerConfigMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m ListenerBudgetControllerConfigMultiError) AllErrors() []error { return m }
+
+// ListenerBudgetControllerConfigValidationError is the validation error
+// returned by ListenerBudgetControllerConfig.Validate if the designated
+// constraints aren't met.
+type ListenerBudgetControllerConfigValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e ListenerBudgetControllerConfigValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e ListenerBudgetControllerConfigValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e ListenerBudgetControllerConfigValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e ListenerBudgetControllerConfigValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e ListenerBudgetControllerConfigValidationError) ErrorName() string {
+	return "ListenerBudgetControllerConfigValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e ListenerBudgetControllerConfigValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sListenerBudgetControllerConfig.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = ListenerBudgetControllerConfigValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = ListenerBudgetControllerConfigValidationError{}
+
 // Validate checks the field values on AdaptiveConcurrency with the rules
 // defined in the proto definition for this message. If any rules are
 // violated, the first error encountered is returned, or nil if there are no violations.
@@ -376,6 +543,59 @@ func (m *AdaptiveConcurrency) validate(all bool) error {
 			if err := v.Validate(); err != nil {
 				return AdaptiveConcurrencyValidationError{
 					field:  "GradientControllerConfig",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	case *AdaptiveConcurrency_ListenerBudgetControllerConfig:
+		if v == nil {
+			err := AdaptiveConcurrencyValidationError{
+				field:  "ConcurrencyControllerConfig",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+		oneofConcurrencyControllerConfigPresent = true
+
+		if m.GetListenerBudgetControllerConfig() == nil {
+			err := AdaptiveConcurrencyValidationError{
+				field:  "ListenerBudgetControllerConfig",
+				reason: "value is required",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetListenerBudgetControllerConfig()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, AdaptiveConcurrencyValidationError{
+						field:  "ListenerBudgetControllerConfig",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, AdaptiveConcurrencyValidationError{
+						field:  "ListenerBudgetControllerConfig",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetListenerBudgetControllerConfig()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return AdaptiveConcurrencyValidationError{
+					field:  "ListenerBudgetControllerConfig",
 					reason: "embedded message failed validation",
 					cause:  err,
 				}

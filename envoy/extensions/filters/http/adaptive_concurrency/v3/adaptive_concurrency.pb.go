@@ -8,7 +8,8 @@ package adaptive_concurrencyv3
 
 import (
 	_ "github.com/cncf/xds/go/udpa/annotations"
-	v31 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v32 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v31 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/listener_budget/v3"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -89,15 +90,76 @@ func (x *GradientControllerConfig) GetMinRttCalcParams() *GradientControllerConf
 	return nil
 }
 
+// Configuration parameters for the listener budget controller, which takes its concurrency limit
+// from a :ref:`listener budget <config_overload_manager_listener_budget>` instead of sampled
+// latencies. See :ref:`the filter documentation
+// <config_http_filters_adaptive_concurrency_listener_budget_controller>`.
+type ListenerBudgetControllerConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The listener budget to join, counting requests. The participant key is the “stat_prefix“ of
+	// the HTTP connection manager.
+	Participant *v31.ListenerBudgetParticipant `protobuf:"bytes,1,opt,name=participant,proto3" json:"participant,omitempty"`
+	// The concurrency limit applied when no budget named “participant.budget_name“ is configured.
+	MaxConcurrency *wrapperspb.UInt64Value `protobuf:"bytes,2,opt,name=max_concurrency,json=maxConcurrency,proto3" json:"max_concurrency,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListenerBudgetControllerConfig) Reset() {
+	*x = ListenerBudgetControllerConfig{}
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListenerBudgetControllerConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListenerBudgetControllerConfig) ProtoMessage() {}
+
+func (x *ListenerBudgetControllerConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListenerBudgetControllerConfig.ProtoReflect.Descriptor instead.
+func (*ListenerBudgetControllerConfig) Descriptor() ([]byte, []int) {
+	return file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListenerBudgetControllerConfig) GetParticipant() *v31.ListenerBudgetParticipant {
+	if x != nil {
+		return x.Participant
+	}
+	return nil
+}
+
+func (x *ListenerBudgetControllerConfig) GetMaxConcurrency() *wrapperspb.UInt64Value {
+	if x != nil {
+		return x.MaxConcurrency
+	}
+	return nil
+}
+
+// [#next-free-field: 5]
 type AdaptiveConcurrency struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to ConcurrencyControllerConfig:
 	//
 	//	*AdaptiveConcurrency_GradientControllerConfig
+	//	*AdaptiveConcurrency_ListenerBudgetControllerConfig
 	ConcurrencyControllerConfig isAdaptiveConcurrency_ConcurrencyControllerConfig `protobuf_oneof:"concurrency_controller_config"`
 	// If set to false, the adaptive concurrency filter will operate as a pass-through filter. If the
 	// message is unspecified, the filter will be enabled.
-	Enabled *v31.RuntimeFeatureFlag `protobuf:"bytes,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Enabled *v32.RuntimeFeatureFlag `protobuf:"bytes,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	// This field allows for a custom HTTP response status code to the downstream client when
 	// the concurrency limit has been exceeded.
 	// Defaults to 503 (Service Unavailable).
@@ -112,7 +174,7 @@ type AdaptiveConcurrency struct {
 
 func (x *AdaptiveConcurrency) Reset() {
 	*x = AdaptiveConcurrency{}
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[1]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -124,7 +186,7 @@ func (x *AdaptiveConcurrency) String() string {
 func (*AdaptiveConcurrency) ProtoMessage() {}
 
 func (x *AdaptiveConcurrency) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[1]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -137,7 +199,7 @@ func (x *AdaptiveConcurrency) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdaptiveConcurrency.ProtoReflect.Descriptor instead.
 func (*AdaptiveConcurrency) Descriptor() ([]byte, []int) {
-	return file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDescGZIP(), []int{1}
+	return file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AdaptiveConcurrency) GetConcurrencyControllerConfig() isAdaptiveConcurrency_ConcurrencyControllerConfig {
@@ -156,7 +218,16 @@ func (x *AdaptiveConcurrency) GetGradientControllerConfig() *GradientControllerC
 	return nil
 }
 
-func (x *AdaptiveConcurrency) GetEnabled() *v31.RuntimeFeatureFlag {
+func (x *AdaptiveConcurrency) GetListenerBudgetControllerConfig() *ListenerBudgetControllerConfig {
+	if x != nil {
+		if x, ok := x.ConcurrencyControllerConfig.(*AdaptiveConcurrency_ListenerBudgetControllerConfig); ok {
+			return x.ListenerBudgetControllerConfig
+		}
+	}
+	return nil
+}
+
+func (x *AdaptiveConcurrency) GetEnabled() *v32.RuntimeFeatureFlag {
 	if x != nil {
 		return x.Enabled
 	}
@@ -179,7 +250,15 @@ type AdaptiveConcurrency_GradientControllerConfig struct {
 	GradientControllerConfig *GradientControllerConfig `protobuf:"bytes,1,opt,name=gradient_controller_config,json=gradientControllerConfig,proto3,oneof"`
 }
 
+type AdaptiveConcurrency_ListenerBudgetControllerConfig struct {
+	// The concurrency limit is set by a listener budget.
+	ListenerBudgetControllerConfig *ListenerBudgetControllerConfig `protobuf:"bytes,4,opt,name=listener_budget_controller_config,json=listenerBudgetControllerConfig,proto3,oneof"`
+}
+
 func (*AdaptiveConcurrency_GradientControllerConfig) isAdaptiveConcurrency_ConcurrencyControllerConfig() {
+}
+
+func (*AdaptiveConcurrency_ListenerBudgetControllerConfig) isAdaptiveConcurrency_ConcurrencyControllerConfig() {
 }
 
 // Parameters controlling the periodic recalculation of the concurrency limit from sampled request
@@ -196,7 +275,7 @@ type GradientControllerConfig_ConcurrencyLimitCalculationParams struct {
 
 func (x *GradientControllerConfig_ConcurrencyLimitCalculationParams) Reset() {
 	*x = GradientControllerConfig_ConcurrencyLimitCalculationParams{}
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[2]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -208,7 +287,7 @@ func (x *GradientControllerConfig_ConcurrencyLimitCalculationParams) String() st
 func (*GradientControllerConfig_ConcurrencyLimitCalculationParams) ProtoMessage() {}
 
 func (x *GradientControllerConfig_ConcurrencyLimitCalculationParams) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[2]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +350,7 @@ type GradientControllerConfig_MinimumRTTCalculationParams struct {
 
 func (x *GradientControllerConfig_MinimumRTTCalculationParams) Reset() {
 	*x = GradientControllerConfig_MinimumRTTCalculationParams{}
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[3]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -283,7 +362,7 @@ func (x *GradientControllerConfig_MinimumRTTCalculationParams) String() string {
 func (*GradientControllerConfig_MinimumRTTCalculationParams) ProtoMessage() {}
 
 func (x *GradientControllerConfig_MinimumRTTCalculationParams) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[3]
+	mi := &file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +424,7 @@ var File_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurre
 
 const file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDesc = "" +
 	"\n" +
-	"Penvoy/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto\x125envoy.extensions.filters.http.adaptive_concurrency.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a\x1fenvoy/type/v3/http_status.proto\x1a\x1benvoy/type/v3/percent.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a!udpa/annotations/versioning.proto\x1a\x17validate/validate.proto\"\xa3\v\n" +
+	"Penvoy/extensions/filters/http/adaptive_concurrency/v3/adaptive_concurrency.proto\x125envoy.extensions.filters.http.adaptive_concurrency.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x1a\x1fenvoy/type/v3/http_status.proto\x1a\x1benvoy/type/v3/percent.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a!udpa/annotations/versioning.proto\x1a\x17validate/validate.proto\"\xa3\v\n" +
 	"\x18GradientControllerConfig\x12V\n" +
 	"\x1bsample_aggregate_percentile\x18\x01 \x01(\v2\x16.envoy.type.v3.PercentR\x19sampleAggregatePercentile\x12\xb5\x01\n" +
 	"\x18concurrency_limit_params\x18\x02 \x01(\v2q.envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParamsB\b\xfaB\x05\x8a\x01\x02\x10\x01R\x16concurrencyLimitParams\x12\xa4\x01\n" +
@@ -364,9 +443,13 @@ const file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concur
 	"\x0fmin_concurrency\x18\x04 \x01(\v2\x1c.google.protobuf.UInt32ValueB\a\xfaB\x04*\x02 \x00R\x0eminConcurrency\x12.\n" +
 	"\x06buffer\x18\x05 \x01(\v2\x16.envoy.type.v3.PercentR\x06buffer:q\x9aň\x1el\n" +
 	"jenvoy.config.filter.http.adaptive_concurrency.v2alpha.GradientControllerConfig.MinimumRTTCalculationParams:U\x9aň\x1eP\n" +
-	"Nenvoy.config.filter.http.adaptive_concurrency.v2alpha.GradientControllerConfig\"\xd3\x03\n" +
+	"Nenvoy.config.filter.http.adaptive_concurrency.v2alpha.GradientControllerConfig\"\xe8\x01\n" +
+	"\x1eListenerBudgetControllerConfig\x12q\n" +
+	"\vparticipant\x18\x01 \x01(\v2E.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipantB\b\xfaB\x05\x8a\x01\x02\x10\x01R\vparticipant\x12S\n" +
+	"\x0fmax_concurrency\x18\x02 \x01(\v2\x1c.google.protobuf.UInt64ValueB\f\xfaB\t\x8a\x01\x02\x10\x012\x02(\x01R\x0emaxConcurrency\"\x82\x05\n" +
 	"\x13AdaptiveConcurrency\x12\x99\x01\n" +
-	"\x1agradient_controller_config\x18\x01 \x01(\v2O.envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfigB\b\xfaB\x05\x8a\x01\x02\x10\x01H\x00R\x18gradientControllerConfig\x12B\n" +
+	"\x1agradient_controller_config\x18\x01 \x01(\v2O.envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfigB\b\xfaB\x05\x8a\x01\x02\x10\x01H\x00R\x18gradientControllerConfig\x12\xac\x01\n" +
+	"!listener_budget_controller_config\x18\x04 \x01(\v2U.envoy.extensions.filters.http.adaptive_concurrency.v3.ListenerBudgetControllerConfigB\b\xfaB\x05\x8a\x01\x02\x10\x01H\x00R\x1elistenerBudgetControllerConfig\x12B\n" +
 	"\aenabled\x18\x02 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\aenabled\x12d\n" +
 	"!concurrency_limit_exceeded_status\x18\x03 \x01(\v2\x19.envoy.type.v3.HttpStatusR\x1econcurrencyLimitExceededStatus:P\x9aň\x1eK\n" +
 	"Ienvoy.config.filter.http.adaptive_concurrency.v2alpha.AdaptiveConcurrencyB$\n" +
@@ -385,38 +468,44 @@ func file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurr
 	return file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDescData
 }
 
-var file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_goTypes = []any{
 	(*GradientControllerConfig)(nil),                                   // 0: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig
-	(*AdaptiveConcurrency)(nil),                                        // 1: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency
-	(*GradientControllerConfig_ConcurrencyLimitCalculationParams)(nil), // 2: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams
-	(*GradientControllerConfig_MinimumRTTCalculationParams)(nil),       // 3: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams
-	(*v3.Percent)(nil),                                                 // 4: envoy.type.v3.Percent
-	(*v31.RuntimeFeatureFlag)(nil),                                     // 5: envoy.config.core.v3.RuntimeFeatureFlag
-	(*v3.HttpStatus)(nil),                                              // 6: envoy.type.v3.HttpStatus
-	(*wrapperspb.UInt32Value)(nil),                                     // 7: google.protobuf.UInt32Value
-	(*durationpb.Duration)(nil),                                        // 8: google.protobuf.Duration
+	(*ListenerBudgetControllerConfig)(nil),                             // 1: envoy.extensions.filters.http.adaptive_concurrency.v3.ListenerBudgetControllerConfig
+	(*AdaptiveConcurrency)(nil),                                        // 2: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency
+	(*GradientControllerConfig_ConcurrencyLimitCalculationParams)(nil), // 3: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams
+	(*GradientControllerConfig_MinimumRTTCalculationParams)(nil),       // 4: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams
+	(*v3.Percent)(nil),                                                 // 5: envoy.type.v3.Percent
+	(*v31.ListenerBudgetParticipant)(nil),                              // 6: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
+	(*wrapperspb.UInt64Value)(nil),                                     // 7: google.protobuf.UInt64Value
+	(*v32.RuntimeFeatureFlag)(nil),                                     // 8: envoy.config.core.v3.RuntimeFeatureFlag
+	(*v3.HttpStatus)(nil),                                              // 9: envoy.type.v3.HttpStatus
+	(*wrapperspb.UInt32Value)(nil),                                     // 10: google.protobuf.UInt32Value
+	(*durationpb.Duration)(nil),                                        // 11: google.protobuf.Duration
 }
 var file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_depIdxs = []int32{
-	4,  // 0: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.sample_aggregate_percentile:type_name -> envoy.type.v3.Percent
-	2,  // 1: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.concurrency_limit_params:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams
-	3,  // 2: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.min_rtt_calc_params:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams
-	0,  // 3: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.gradient_controller_config:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig
-	5,  // 4: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.enabled:type_name -> envoy.config.core.v3.RuntimeFeatureFlag
-	6,  // 5: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.concurrency_limit_exceeded_status:type_name -> envoy.type.v3.HttpStatus
-	7,  // 6: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams.max_concurrency_limit:type_name -> google.protobuf.UInt32Value
-	8,  // 7: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams.concurrency_update_interval:type_name -> google.protobuf.Duration
-	8,  // 8: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.interval:type_name -> google.protobuf.Duration
-	8,  // 9: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.fixed_value:type_name -> google.protobuf.Duration
-	7,  // 10: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.request_count:type_name -> google.protobuf.UInt32Value
-	4,  // 11: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.jitter:type_name -> envoy.type.v3.Percent
-	7,  // 12: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.min_concurrency:type_name -> google.protobuf.UInt32Value
-	4,  // 13: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.buffer:type_name -> envoy.type.v3.Percent
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	5,  // 0: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.sample_aggregate_percentile:type_name -> envoy.type.v3.Percent
+	3,  // 1: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.concurrency_limit_params:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams
+	4,  // 2: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.min_rtt_calc_params:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams
+	6,  // 3: envoy.extensions.filters.http.adaptive_concurrency.v3.ListenerBudgetControllerConfig.participant:type_name -> envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
+	7,  // 4: envoy.extensions.filters.http.adaptive_concurrency.v3.ListenerBudgetControllerConfig.max_concurrency:type_name -> google.protobuf.UInt64Value
+	0,  // 5: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.gradient_controller_config:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig
+	1,  // 6: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.listener_budget_controller_config:type_name -> envoy.extensions.filters.http.adaptive_concurrency.v3.ListenerBudgetControllerConfig
+	8,  // 7: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.enabled:type_name -> envoy.config.core.v3.RuntimeFeatureFlag
+	9,  // 8: envoy.extensions.filters.http.adaptive_concurrency.v3.AdaptiveConcurrency.concurrency_limit_exceeded_status:type_name -> envoy.type.v3.HttpStatus
+	10, // 9: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams.max_concurrency_limit:type_name -> google.protobuf.UInt32Value
+	11, // 10: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.ConcurrencyLimitCalculationParams.concurrency_update_interval:type_name -> google.protobuf.Duration
+	11, // 11: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.interval:type_name -> google.protobuf.Duration
+	11, // 12: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.fixed_value:type_name -> google.protobuf.Duration
+	10, // 13: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.request_count:type_name -> google.protobuf.UInt32Value
+	5,  // 14: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.jitter:type_name -> envoy.type.v3.Percent
+	10, // 15: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.min_concurrency:type_name -> google.protobuf.UInt32Value
+	5,  // 16: envoy.extensions.filters.http.adaptive_concurrency.v3.GradientControllerConfig.MinimumRTTCalculationParams.buffer:type_name -> envoy.type.v3.Percent
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() {
@@ -426,8 +515,9 @@ func file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurr
 	if File_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto != nil {
 		return
 	}
-	file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[1].OneofWrappers = []any{
+	file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_msgTypes[2].OneofWrappers = []any{
 		(*AdaptiveConcurrency_GradientControllerConfig)(nil),
+		(*AdaptiveConcurrency_ListenerBudgetControllerConfig)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -435,7 +525,7 @@ func file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurr
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDesc), len(file_envoy_extensions_filters_http_adaptive_concurrency_v3_adaptive_concurrency_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
