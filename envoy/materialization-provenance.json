@@ -1,0 +1,10 @@
+{
+  "wrapper_commit": "ee3a6c41da7c5aa7dc6c15ab41d6804630b3f4d9",
+  "upstream_version": "v1.39.4",
+  "upstream_commit": "72315c132d462e5126e492ab2a71057565dbc87a",
+  "patchset_sha256": "b77499e3b1ee2826a73b09cad0f75caa78879fd17699eb824a6c94826682877f",
+  "bindings_base": "envoy/v1.39.1-dd2",
+  "generated_packages": [
+    "envoy/config/route/v3"
+  ]
+}
