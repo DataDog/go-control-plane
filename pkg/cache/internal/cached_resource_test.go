@@ -155,19 +155,20 @@ func TestDeltaResource(t *testing.T) {
 		cacheVersion := "42"
 		defaultResourceVersion := hashResource(anySerialized.Value)
 
-		validate := func(t testing.TB, serialized *discovery.Resource, expectedVersion string) {
-			assert.Equal(t, c.Name, serialized.Name)
+		validate := func(tb testing.TB, serialized *discovery.Resource, expectedVersion string) {
+			tb.Helper()
+			assert.Equal(tb, c.Name, serialized.Name)
 			if expectedVersion != "" {
-				assert.Equal(t, expectedVersion, serialized.Version)
+				assert.Equal(tb, expectedVersion, serialized.Version)
 			} else {
-				assert.Equal(t, defaultResourceVersion, serialized.Version)
+				assert.Equal(tb, defaultResourceVersion, serialized.Version)
 			}
-			assert.Nil(t, serialized.Ttl)
-			require.NotEmpty(t, serialized.Resource.Value)
+			assert.Nil(tb, serialized.Ttl)
+			require.NotEmpty(tb, serialized.Resource.Value)
 
 			ret := &cluster.Cluster{}
-			require.NoError(t, serialized.Resource.UnmarshalTo(ret))
-			assert.Empty(t, cmp.Diff(c, ret, protocmp.Transform()))
+			require.NoError(tb, serialized.Resource.UnmarshalTo(ret))
+			assert.Empty(tb, cmp.Diff(c, ret, protocmp.Transform()))
 		}
 
 		t.Run("without ttl", func(t *testing.T) {

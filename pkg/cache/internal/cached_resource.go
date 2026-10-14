@@ -212,7 +212,7 @@ func (c *CachedResource) GetDeltaResource() (*discovery.Resource, error) {
 	}, nil
 }
 
-// hashResource will take a resource and create a SHA256 hash sum out of the marshaled bytes
+// hashResource will take a resource and create a SHA256 hash sum out of the marshaled bytes.
 func hashResource(resource []byte) string {
 	hasher := sha256.New()
 	hasher.Write(resource)

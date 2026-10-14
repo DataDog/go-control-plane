@@ -26,6 +26,7 @@ import (
 // Snapshot is an internally consistent snapshot of xDS resources.
 // Consistency is important for the convergence as different resource types
 // from the snapshot may be delivered to the proxy in arbitrary order.
+//
 // Deprecated: use types.Snapshot instead.
 type Snapshot struct {
 	Resources [types.UnknownType]Resources
@@ -35,6 +36,7 @@ var _ ResourceSnapshot = &Snapshot{}
 
 // NewSnapshot creates a snapshot from response types and a version.
 // The resources map is keyed off the type URL of a resource, followed by the slice of resource objects.
+//
 // Deprecated: use types.NewSnapshot or types.NewSnapshotFromTypeSnapshots instead.
 func NewSnapshot(version string, resources map[resource.Type][]types.Resource) (*Snapshot, error) {
 	out := Snapshot{}
@@ -53,6 +55,7 @@ func NewSnapshot(version string, resources map[resource.Type][]types.Resource) (
 
 // NewSnapshotWithTTLs creates a snapshot of ResourceWithTTLs.
 // The resources map is keyed off the type URL of a resource, followed by the slice of resource objects.
+//
 // Deprecated: use types.NewSnapshot or types.NewSnapshotFromTypeSnapshots instead.
 func NewSnapshotWithTTLs(version string, resources map[resource.Type][]types.ResourceWithTTL) (*Snapshot, error) {
 	out := Snapshot{}
