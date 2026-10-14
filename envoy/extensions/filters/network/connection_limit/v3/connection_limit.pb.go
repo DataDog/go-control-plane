@@ -9,6 +9,7 @@ package connection_limitv3
 import (
 	_ "github.com/cncf/xds/go/udpa/annotations"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v31 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/listener_budget/v3"
 	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -26,6 +27,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// [#next-free-field: 6]
 type ConnectionLimit struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The prefix to use when emitting :ref:`statistics
@@ -43,6 +45,19 @@ type ConnectionLimit struct {
 	// Runtime flag that controls whether the filter is enabled or not. If not specified, defaults
 	// to enabled.
 	RuntimeEnabled *v3.RuntimeFeatureFlag `protobuf:"bytes,4,opt,name=runtime_enabled,json=runtimeEnabled,proto3" json:"runtime_enabled,omitempty"`
+	// Join a :ref:`listener budget
+	// <envoy_v3_api_msg_extensions.bootstrap.listener_budget.v3.ListenerBudget>`.
+	// The budget then replaces ``max_connections`` with a limit it recomputes on every refresh
+	// tick, shared by every filter chain that joins it with the same ``stat_prefix``, the
+	// participant key. Give every listener its own ``stat_prefix``. Set
+	// ``max`` in this block to keep a hard ceiling. When no budget with that name is configured,
+	// ``max_connections`` applies and a warning is logged.
+	//
+	// The usage the budget plans against counts every connection the filter holds, including the
+	// rejected connections waiting for their ``delay`` to expire, since they still hold a socket.
+	// Usage can therefore exceed the limit; under pressure, the part above the limit is left out of
+	// the fair share.
+	ListenerBudget *v31.ListenerBudgetParticipant `protobuf:"bytes,5,opt,name=listener_budget,json=listenerBudget,proto3" json:"listener_budget,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -105,17 +120,25 @@ func (x *ConnectionLimit) GetRuntimeEnabled() *v3.RuntimeFeatureFlag {
 	return nil
 }
 
+func (x *ConnectionLimit) GetListenerBudget() *v31.ListenerBudgetParticipant {
+	if x != nil {
+		return x.ListenerBudget
+	}
+	return nil
+}
+
 var File_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto protoreflect.FileDescriptor
 
 const file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_rawDesc = "" +
 	"\n" +
-	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\x8f\x02\n" +
+	"Kenvoy/extensions/filters/network/connection_limit/v3/connection_limit.proto\x124envoy.extensions.filters.network.connection_limit.v3\x1a\x1fenvoy/config/core/v3/base.proto\x1a@envoy/extensions/common/listener_budget/v3/listener_budget.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xff\x02\n" +
 	"\x0fConnectionLimit\x12(\n" +
 	"\vstat_prefix\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\n" +
 	"statPrefix\x12N\n" +
 	"\x0fmax_connections\x18\x02 \x01(\v2\x1c.google.protobuf.UInt64ValueB\a\xfaB\x042\x02(\x01R\x0emaxConnections\x12/\n" +
 	"\x05delay\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x05delay\x12Q\n" +
-	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabledB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x0fruntime_enabled\x18\x04 \x01(\v2(.envoy.config.core.v3.RuntimeFeatureFlagR\x0eruntimeEnabled\x12n\n" +
+	"\x0flistener_budget\x18\x05 \x01(\v2E.envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipantR\x0elistenerBudgetB\xd4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"Bio.envoyproxy.envoy.extensions.filters.network.connection_limit.v3B\x14ConnectionLimitProtoP\x01Zngithub.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/connection_limit/v3;connection_limitv3b\x06proto3"
 
 var (
@@ -132,20 +155,22 @@ func file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_
 
 var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_goTypes = []any{
-	(*ConnectionLimit)(nil),        // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit
-	(*wrapperspb.UInt64Value)(nil), // 1: google.protobuf.UInt64Value
-	(*durationpb.Duration)(nil),    // 2: google.protobuf.Duration
-	(*v3.RuntimeFeatureFlag)(nil),  // 3: envoy.config.core.v3.RuntimeFeatureFlag
+	(*ConnectionLimit)(nil),               // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit
+	(*wrapperspb.UInt64Value)(nil),        // 1: google.protobuf.UInt64Value
+	(*durationpb.Duration)(nil),           // 2: google.protobuf.Duration
+	(*v3.RuntimeFeatureFlag)(nil),         // 3: envoy.config.core.v3.RuntimeFeatureFlag
+	(*v31.ListenerBudgetParticipant)(nil), // 4: envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
 }
 var file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_depIdxs = []int32{
 	1, // 0: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.max_connections:type_name -> google.protobuf.UInt64Value
 	2, // 1: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.delay:type_name -> google.protobuf.Duration
 	3, // 2: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.runtime_enabled:type_name -> envoy.config.core.v3.RuntimeFeatureFlag
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 3: envoy.extensions.filters.network.connection_limit.v3.ConnectionLimit.listener_budget:type_name -> envoy.extensions.common.listener_budget.v3.ListenerBudgetParticipant
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_filters_network_connection_limit_v3_connection_limit_proto_init() }

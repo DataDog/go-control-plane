@@ -277,6 +277,71 @@ func (m *GradientControllerConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (in
 	return len(dAtA) - i, nil
 }
 
+func (m *ListenerBudgetControllerConfig) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ListenerBudgetControllerConfig) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ListenerBudgetControllerConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.MaxConcurrency != nil {
+		size, err := (*wrapperspb.UInt64Value)(m.MaxConcurrency).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Participant != nil {
+		if vtmsg, ok := interface{}(m.Participant).(interface {
+			MarshalToSizedBufferVTStrict([]byte) (int, error)
+		}); ok {
+			size, err := vtmsg.MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		} else {
+			encoded, err := proto.Marshal(m.Participant)
+			if err != nil {
+				return 0, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *AdaptiveConcurrency) MarshalVTStrict() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -306,6 +371,13 @@ func (m *AdaptiveConcurrency) MarshalToSizedBufferVTStrict(dAtA []byte) (int, er
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if msg, ok := m.ConcurrencyControllerConfig.(*AdaptiveConcurrency_ListenerBudgetControllerConfig); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
 	}
 	if m.ConcurrencyLimitExceededStatus != nil {
 		if vtmsg, ok := interface{}(m.ConcurrencyLimitExceededStatus).(interface {
@@ -381,6 +453,29 @@ func (m *AdaptiveConcurrency_GradientControllerConfig) MarshalToSizedBufferVTStr
 		i = protohelpers.EncodeVarint(dAtA, i, 0)
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *AdaptiveConcurrency_ListenerBudgetControllerConfig) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *AdaptiveConcurrency_ListenerBudgetControllerConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.ListenerBudgetControllerConfig != nil {
+		size, err := m.ListenerBudgetControllerConfig.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x22
+	} else {
+		i = protohelpers.EncodeVarint(dAtA, i, 0)
+		i--
+		dAtA[i] = 0x22
 	}
 	return len(dAtA) - i, nil
 }
@@ -480,6 +575,30 @@ func (m *GradientControllerConfig) SizeVT() (n int) {
 	return n
 }
 
+func (m *ListenerBudgetControllerConfig) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Participant != nil {
+		if size, ok := interface{}(m.Participant).(interface {
+			SizeVT() int
+		}); ok {
+			l = size.SizeVT()
+		} else {
+			l = proto.Size(m.Participant)
+		}
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.MaxConcurrency != nil {
+		l = (*wrapperspb.UInt64Value)(m.MaxConcurrency).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	n += len(m.unknownFields)
+	return n
+}
+
 func (m *AdaptiveConcurrency) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -521,6 +640,20 @@ func (m *AdaptiveConcurrency_GradientControllerConfig) SizeVT() (n int) {
 	_ = l
 	if m.GradientControllerConfig != nil {
 		l = m.GradientControllerConfig.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	} else {
+		n += 2
+	}
+	return n
+}
+func (m *AdaptiveConcurrency_ListenerBudgetControllerConfig) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ListenerBudgetControllerConfig != nil {
+		l = m.ListenerBudgetControllerConfig.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	} else {
 		n += 2

@@ -52,6 +52,28 @@ func (m *ConnectionLimit) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error)
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.ListenerBudget != nil {
+		if vtmsg, ok := interface{}(m.ListenerBudget).(interface {
+			MarshalToSizedBufferVTStrict([]byte) (int, error)
+		}); ok {
+			size, err := vtmsg.MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		} else {
+			encoded, err := proto.Marshal(m.ListenerBudget)
+			if err != nil {
+				return 0, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
 	if m.RuntimeEnabled != nil {
 		if vtmsg, ok := interface{}(m.RuntimeEnabled).(interface {
 			MarshalToSizedBufferVTStrict([]byte) (int, error)
@@ -129,6 +151,16 @@ func (m *ConnectionLimit) SizeVT() (n int) {
 			l = size.SizeVT()
 		} else {
 			l = proto.Size(m.RuntimeEnabled)
+		}
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.ListenerBudget != nil {
+		if size, ok := interface{}(m.ListenerBudget).(interface {
+			SizeVT() int
+		}); ok {
+			l = size.SizeVT()
+		} else {
+			l = proto.Size(m.ListenerBudget)
 		}
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
