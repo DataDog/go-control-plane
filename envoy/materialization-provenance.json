@@ -1,0 +1,22 @@
+{
+  "wrapper_commit": "139f9c8cda9f9517abbaeacb08dc38b1a0d3b2f9",
+  "upstream_version": "v1.40.0",
+  "upstream_commit": "9e5580933739775e8bce696a57a2e1bc99368f23",
+  "bindings_base": "envoy/v1.40.0-dd0",
+  "bindings_base_commit": "988c284b30c8f4f883c142aa6542c7178d23f0aa",
+  "generated_packages": [
+    "envoy/config/route/v3"
+  ],
+  "api_sha256": "dbf812698d17e91f85152037d33c00646a2f39544f0ee7c3ae9be728b57c336c",
+  "generation": "Apply generated differences between the released API and the API with Envoy #43; preserve unrelated generated output.",
+  "generators": {
+    "protoc": "v7.36.2",
+    "protoc-gen-go": "v1.36.11",
+    "protoc-gen-validate": "v1.3.3",
+    "protoc-gen-go-vtproto": "v0.6.1-0.20240319094008-0393e58bdf10",
+    "vtprotobuf_features": [
+      "marshal_strict",
+      "size"
+    ]
+  }
+}
