@@ -1922,6 +1922,26 @@ func (m *RouteAction_RequestMirrorPolicy) MarshalToSizedBufferVTStrict(dAtA []by
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Timeout != nil {
+		size, err := (*durationpb.Duration)(m.Timeout).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x5a
+	}
+	if m.RetryPolicy != nil {
+		size, err := m.RetryPolicy.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x52
+	}
 	if len(m.StatPrefix) > 0 {
 		i -= len(m.StatPrefix)
 		copy(dAtA[i:], m.StatPrefix)
@@ -7473,6 +7493,14 @@ func (m *RouteAction_RequestMirrorPolicy) SizeVT() (n int) {
 	}
 	l = len(m.StatPrefix)
 	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.RetryPolicy != nil {
+		l = m.RetryPolicy.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.Timeout != nil {
+		l = (*durationpb.Duration)(m.Timeout).SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
