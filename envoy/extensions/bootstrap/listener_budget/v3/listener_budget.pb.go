@@ -50,31 +50,42 @@ const (
 // On each tick, with “u“ the participant's peak usage since the previous tick and “L“ its
 // current limit, all limits clamped to the participant's “[min, max]“:
 //
-//   - Pressure 0: “L“ becomes “u + max(burst_headroom, 2 * (u - u'))“, with “u'“ the peak
-//     usage of the previous tick, and at least “2 * L“ if “u“ reached “L“ (the participant was
-//     rejecting).
-//   - Pressure “p“ above 0: neither the room for a ramp nor the doubling applies. Each priority
+//   - At rest, once the pressure has stayed at 0 for “pressure_release_delay“: “L“ becomes
+//     “u + max(burst_headroom, 2 * (u - u'))“, with “u'“ the peak usage of the previous tick,
+//     and at least “2 * L“ if “u“ reached “L“ (the participant was rejecting). A “DEFAULT“
+//     participant that a squeeze cut or held gets “L + max(burst_headroom, 2 * (u - u'))“
+//     instead, for as long as “u“ reaches “L“: it grows back at the pace of a ramp rather than
+//     doubling.
+//   - Pressure “p“ above 0, or 0 for less than “pressure_release_delay“, counted as just above
+//     0: neither the room for a ramp nor the doubling applies. Each priority
 //     class is squeezed within its own band of pressure: “LOW“ over
 //     “[0, default_squeeze_start]“, “DEFAULT“ over “[default_squeeze_start, 1]“. With “s“
 //     the pressure mapped from the class's band to “[0, 1]“, the class's participants of each unit
 //     share “(1 - s / 4) * sum(d)“, with “d“ a participant's demand, max-min fairly: those whose
-//     “d“ is above a common level “l“ get “l“, and the others keep their usage. “d“ is
+//     “d“ is above a common level “l“ get “l“, “DEFAULT“ ones “max(l, min(u, L))“, and
+//     the others keep their usage. A squeeze thus never sets a “DEFAULT“ limit below the usage it
+//     admitted: it takes away the room to grow, and the limit comes down to “l“ as that usage
+//     does, through connections or requests that end and are not replaced. Where that usage is
+//     above “l“, the class keeps more than “(1 - s / 4) * sum(d)“: the budget does not enforce
+//     the rest, which the other overload manager actions remain the backstop for. “d“ is
 //     “min(u, L)“, so that usage above “L“, such as connections rejected and waiting to close,
-//     does not count, and once a squeeze has cut the participant, “d“ stays the value read before
-//     the cut until “p“ is back to 0. “l“ thus only depends on “s“ and the demand: at a
-//     constant pressure the limits stay at the level of the first tick, unless participants below
-//     “l“ grow. “LOW“ participants sit at their floor once “p“ reaches
+//     does not count, and once a squeeze has cut the participant, or held a “DEFAULT“ one above
+//     “l“, “d“ stays the value read before until the budget is back at rest. “l“ thus only
+//     depends on “s“ and the demand: at a constant pressure the limits stay at the level of the
+//     first tick, unless participants below “l“ grow. “LOW“ participants sit at their floor once
+//     “p“ reaches
 //     “default_squeeze_start“, and below their share they keep their usage with no headroom,
 //     without growing above “L“. “DEFAULT“ participants below their share keep
-//     “u + burst_headroom“, without growing above “L“ if a squeeze cut them since “p“ was last
-//     0, and otherwise without growing above
+//     “u + burst_headroom“, without growing above “L“ if a squeeze cut them, and otherwise
+//     without growing above
 //     “max(L, min(min(u, L) + floor(burst_headroom * (1 - s)), l))“: they grow by
 //     “burst_headroom“ per tick where the band starts, by less as “p“ rises, by none at a
 //     pressure of 1, and never above “l“. Since “sum(d)“ includes their demand, their growth
 //     lowers “l“ for the participants above it. While their band is not reached, “DEFAULT“
 //     participants get “min(u, L) + burst_headroom“, which keeps following a growing usage, except
-//     the ones cut to their share since “p“ was last 0: they keep “u + burst_headroom“ without
-//     growing above “L“.
+//     the ones a squeeze cut or held: they keep “u + burst_headroom“ without growing above “L“,
+//     until the pressure has stayed below “default_squeeze_start - 0.1“ for
+//     “pressure_release_delay“, which releases them.
 //
 // The budget reads the action on its own tick, so it follows the overload manager by up to one
 // “refresh_interval“. It reports the pressure it read in its “pressure_percent“ gauge.
@@ -95,7 +106,7 @@ const (
 // Several budgets can be configured, as several bootstrap extensions with distinct names. Two
 // bootstrap extensions with the same name must have identical settings; they then declare one
 // budget.
-// [#next-free-field: 5]
+// [#next-free-field: 6]
 type ListenerBudget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the budget, used by the filters to join it.
@@ -109,8 +120,18 @@ type ListenerBudget struct {
 	// How often the budget reads the pressure and recomputes the limits, at least 1 ms. A short
 	// interval, such as the default of 250 ms, lets limits follow bursts closely.
 	RefreshInterval *durationpb.Duration `protobuf:"bytes,4,opt,name=refresh_interval,json=refreshInterval,proto3" json:"refresh_interval,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// How long the pressure must stay at 0 before the budget is back at rest, 5s by default. Until
+	// then, a pressure of 0 counts as one just above 0: squeezed participants keep their demand and
+	// their limits, ``LOW`` participants get no headroom, and neither the room for a ramp nor the
+	// doubling applies, so that a pressure dipping to 0 for a tick undoes nothing. The same delay
+	// releases the ``DEFAULT`` participants a squeeze cut or held once the pressure stays below
+	// ``default_squeeze_start - 0.1``. It is counted in ticks of ``refresh_interval``, rounded up;
+	// 0 brings the budget back at rest on the first tick at 0. Keep it at least as long as the
+	// smoothing time constant of the pressure's trigger: for a ``cpu_utilization`` trigger, the
+	// overload manager's ``refresh_interval`` divided by the monitor's ``smoothing_factor``.
+	PressureReleaseDelay *durationpb.Duration `protobuf:"bytes,5,opt,name=pressure_release_delay,json=pressureReleaseDelay,proto3" json:"pressure_release_delay,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ListenerBudget) Reset() {
@@ -171,16 +192,24 @@ func (x *ListenerBudget) GetRefreshInterval() *durationpb.Duration {
 	return nil
 }
 
+func (x *ListenerBudget) GetPressureReleaseDelay() *durationpb.Duration {
+	if x != nil {
+		return x.PressureReleaseDelay
+	}
+	return nil
+}
+
 var File_envoy_extensions_bootstrap_listener_budget_v3_listener_budget_proto protoreflect.FileDescriptor
 
 const file_envoy_extensions_bootstrap_listener_budget_v3_listener_budget_proto_rawDesc = "" +
 	"\n" +
-	"Cenvoy/extensions/bootstrap/listener_budget/v3/listener_budget.proto\x12-envoy.extensions.bootstrap.listener_budget.v3\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\xab\x02\n" +
+	"Cenvoy/extensions/bootstrap/listener_budget/v3/listener_budget.proto\x12-envoy.extensions.bootstrap.listener_budget.v3\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a\x17validate/validate.proto\"\x86\x03\n" +
 	"\x0eListenerBudget\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x10\x01R\x04name\x12=\n" +
 	"\x16default_burst_headroom\x18\x02 \x01(\x04B\a\xfaB\x042\x02 \x00R\x14defaultBurstHeadroom\x12i\n" +
 	"\x15default_squeeze_start\x18\x03 \x01(\v2\x1c.google.protobuf.DoubleValueB\x17\xfaB\x14\x12\x12\x11\x00\x00\x00\x00\x00\x00\xf0?)\x00\x00\x00\x00\x00\x00\x00\x00R\x13defaultSqueezeStart\x12R\n" +
-	"\x10refresh_interval\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\f\xfaB\t\xaa\x01\x062\x04\x10\xc0\x84=R\x0frefreshIntervalB\xc4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x10refresh_interval\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\f\xfaB\t\xaa\x01\x062\x04\x10\xc0\x84=R\x0frefreshInterval\x12Y\n" +
+	"\x16pressure_release_delay\x18\x05 \x01(\v2\x19.google.protobuf.DurationB\b\xfaB\x05\xaa\x01\x022\x00R\x14pressureReleaseDelayB\xc4\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	";io.envoyproxy.envoy.extensions.bootstrap.listener_budget.v3B\x13ListenerBudgetProtoP\x01Zfgithub.com/envoyproxy/go-control-plane/envoy/extensions/bootstrap/listener_budget/v3;listener_budgetv3b\x06proto3"
 
 var (
@@ -204,11 +233,12 @@ var file_envoy_extensions_bootstrap_listener_budget_v3_listener_budget_proto_goT
 var file_envoy_extensions_bootstrap_listener_budget_v3_listener_budget_proto_depIdxs = []int32{
 	1, // 0: envoy.extensions.bootstrap.listener_budget.v3.ListenerBudget.default_squeeze_start:type_name -> google.protobuf.DoubleValue
 	2, // 1: envoy.extensions.bootstrap.listener_budget.v3.ListenerBudget.refresh_interval:type_name -> google.protobuf.Duration
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 2: envoy.extensions.bootstrap.listener_budget.v3.ListenerBudget.pressure_release_delay:type_name -> google.protobuf.Duration
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_bootstrap_listener_budget_v3_listener_budget_proto_init() }

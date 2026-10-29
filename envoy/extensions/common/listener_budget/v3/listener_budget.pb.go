@@ -90,11 +90,15 @@ func (ListenerBudgetParticipant_Priority) EnumDescriptor() ([]byte, []int) {
 // key: the budget then isolates and prioritizes listeners from one another, not the virtual hosts
 // or routes served by one listener. The key names the participant's statistics.
 //
-// The participant's settings are those of its most recently created filter chain. This is how a
-// listener update, including a filter chain only update, changes them: the new filter chains apply
-// their settings to the whole participant while the previous ones drain. A change of settings is
-// logged as a warning. Declare identical settings on every filter chain sharing a participant key;
-// when they differ, the settings that apply depend on the order in which the chains are created.
+// The participant's settings are those of its most recently created filter chain that still
+// exists, from the next refresh tick. This is how a listener update, including a filter chain only
+// update, changes them: the new filter chains apply their settings to the whole participant while
+// the previous ones drain, and an update rejected after its filter chains were created changes
+// nothing. A change of “priority“ moves the participant to its new class as one that no squeeze
+// has cut or held: from its current limit, it gets what that class gets at the current pressure.
+// A change of settings is logged as a warning. Declare identical settings on every filter
+// chain sharing a participant key; when they differ, the settings that apply depend on the order in
+// which the chains are created.
 //
 // Without pressure, a participant's limit follows its peak usage plus “burst_headroom“, or plus
 // twice the increase of that peak usage over the previous tick when larger, and a participant

@@ -1,16 +1,11 @@
 {
-  "wrapper_commit": "139f9c8cda9f9517abbaeacb08dc38b1a0d3b2f9",
-  "upstream_version": "v1.40.0",
-  "upstream_commit": "9e5580933739775e8bce696a57a2e1bc99368f23",
-  "bindings_base": "envoy/v1.40.0-dd0",
-  "bindings_base_commit": "988c284b30c8f4f883c142aa6542c7178d23f0aa",
-  "generated_packages": [
-    "envoy/config/route/v3"
-  ],
-  "api_sha256": "dbf812698d17e91f85152037d33c00646a2f39544f0ee7c3ae9be728b57c336c",
-  "generation": "Apply generated differences between the released API and the API with Envoy #43; preserve unrelated generated output.",
+  "wrapper_commit": "33495e9e1ba33f7b51d62172819314699e4a380d",
+  "upstream_version": "v1.40.2",
+  "upstream_commit": "b2d89e0ae53916f28770771fbdd49c5c99c5c5a2",
+  "patchset_sha256": "8ff52624463afa693b91b6d2002d2bccdbfcf3d2c0bd891208f12fd016971ac1",
+  "generation": "Equivalent of ./ci/do_ci.sh api.go on the tree materialized by .datadog/ci/materialize-envoy.sh, synced like ci/sync_envoy.sh; hand-written tests in generated packages are kept.",
   "generators": {
-    "protoc": "v7.36.2",
+    "protoc": "v7.35.1",
     "protoc-gen-go": "v1.36.11",
     "protoc-gen-validate": "v1.3.3",
     "protoc-gen-go-vtproto": "v0.6.1-0.20240319094008-0393e58bdf10",

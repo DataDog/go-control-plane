@@ -51,6 +51,16 @@ func (m *ListenerBudget) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) 
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.PressureReleaseDelay != nil {
+		size, err := (*durationpb.Duration)(m.PressureReleaseDelay).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x2a
+	}
 	if m.RefreshInterval != nil {
 		size, err := (*durationpb.Duration)(m.RefreshInterval).MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
@@ -105,6 +115,10 @@ func (m *ListenerBudget) SizeVT() (n int) {
 	}
 	if m.RefreshInterval != nil {
 		l = (*durationpb.Duration)(m.RefreshInterval).SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.PressureReleaseDelay != nil {
+		l = (*durationpb.Duration)(m.PressureReleaseDelay).SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
