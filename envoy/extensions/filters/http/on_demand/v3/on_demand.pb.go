@@ -9,9 +9,11 @@ package on_demandv3
 import (
 	_ "github.com/cncf/xds/go/udpa/annotations"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -33,9 +35,23 @@ type OnDemandCds struct {
 	// xdstp:// resource locator for on-demand cluster collection.
 	ResourcesLocator string `protobuf:"bytes,2,opt,name=resources_locator,json=resourcesLocator,proto3" json:"resources_locator,omitempty"`
 	// The timeout for on demand cluster lookup. If not set, defaults to 5 seconds.
-	Timeout       *durationpb.Duration `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Timeout *durationpb.Duration `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// The maximum number of HTTP requests waiting for cluster discovery. If not
+	// specified, the number is unlimited. A value of zero rejects all requests
+	// that require cluster discovery.
+	//
+	// The limit is shared across workers and cluster names using the same
+	// configuration. Primary and mirrored requests have separate counts, including
+	// when ``inherit_primary`` is enabled.
+	//
+	// Excess primary requests receive HTTP 503 with the ``UO`` response flag.
+	// Excess mirrored requests are discarded without affecting the primary request.
+	//
+	// See :ref:`pending cluster discovery requests
+	// <config_http_filters_on_demand_pending_requests>` for details.
+	MaxPendingRequests *wrapperspb.UInt32Value `protobuf:"bytes,4,opt,name=max_pending_requests,json=maxPendingRequests,proto3" json:"max_pending_requests,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *OnDemandCds) Reset() {
@@ -89,6 +105,109 @@ func (x *OnDemandCds) GetTimeout() *durationpb.Duration {
 	return nil
 }
 
+func (x *OnDemandCds) GetMaxPendingRequests() *wrapperspb.UInt32Value {
+	if x != nil {
+		return x.MaxPendingRequests
+	}
+	return nil
+}
+
+// Configuration for on-demand discovery of mirror clusters. These settings apply to all
+// request mirror policies for the request.
+//
+// While cluster discovery is pending, each mirrored request is buffered up to the router's
+// request body buffer limit. If the limit is exceeded, the mirrored request is discarded without
+// applying backpressure to the downstream request. Normal upstream backpressure applies after
+// discovery succeeds. See :ref:`on-demand mirror clusters <config_http_filters_router_mirror_odcds>`
+// for details.
+type MirrorOnDemandCds struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to DefaultPolicy:
+	//
+	//	*MirrorOnDemandCds_InheritPrimary
+	//	*MirrorOnDemandCds_Config
+	DefaultPolicy isMirrorOnDemandCds_DefaultPolicy `protobuf_oneof:"default_policy"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MirrorOnDemandCds) Reset() {
+	*x = MirrorOnDemandCds{}
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MirrorOnDemandCds) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MirrorOnDemandCds) ProtoMessage() {}
+
+func (x *MirrorOnDemandCds) ProtoReflect() protoreflect.Message {
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MirrorOnDemandCds.ProtoReflect.Descriptor instead.
+func (*MirrorOnDemandCds) Descriptor() ([]byte, []int) {
+	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *MirrorOnDemandCds) GetDefaultPolicy() isMirrorOnDemandCds_DefaultPolicy {
+	if x != nil {
+		return x.DefaultPolicy
+	}
+	return nil
+}
+
+func (x *MirrorOnDemandCds) GetInheritPrimary() bool {
+	if x != nil {
+		if x, ok := x.DefaultPolicy.(*MirrorOnDemandCds_InheritPrimary); ok {
+			return x.InheritPrimary
+		}
+	}
+	return false
+}
+
+func (x *MirrorOnDemandCds) GetConfig() *OnDemandCds {
+	if x != nil {
+		if x, ok := x.DefaultPolicy.(*MirrorOnDemandCds_Config); ok {
+			return x.Config
+		}
+	}
+	return nil
+}
+
+type isMirrorOnDemandCds_DefaultPolicy interface {
+	isMirrorOnDemandCds_DefaultPolicy()
+}
+
+type MirrorOnDemandCds_InheritPrimary struct {
+	// If true, use the ``odcds`` configuration from the same filter configuration for mirror
+	// cluster discovery, including its discovery timeout and pending-request limit. Mirrored
+	// requests have a separate pending-request count from original requests. If ``odcds`` is
+	// not specified, mirror cluster discovery is disabled.
+	InheritPrimary bool `protobuf:"varint,1,opt,name=inherit_primary,json=inheritPrimary,proto3,oneof"`
+}
+
+type MirrorOnDemandCds_Config struct {
+	// Configuration for on-demand discovery of mirror clusters, independent of ``odcds``.
+	// If the discovery timeout is not specified, the default is 5 seconds.
+	Config *OnDemandCds `protobuf:"bytes,2,opt,name=config,proto3,oneof"`
+}
+
+func (*MirrorOnDemandCds_InheritPrimary) isMirrorOnDemandCds_DefaultPolicy() {}
+
+func (*MirrorOnDemandCds_Config) isMirrorOnDemandCds_DefaultPolicy() {}
+
 // On Demand Discovery filter config.
 type OnDemand struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -98,14 +217,19 @@ type OnDemand struct {
 	// request to an unknown cluster and will begin a cluster discovery
 	// process. When the discovery is finished (successfully or not), the
 	// request will be resumed for further processing.
-	Odcds         *OnDemandCds `protobuf:"bytes,1,opt,name=odcds,proto3" json:"odcds,omitempty"`
+	Odcds *OnDemandCds `protobuf:"bytes,1,opt,name=odcds,proto3" json:"odcds,omitempty"`
+	// An optional configuration for on-demand discovery of mirror clusters. If not specified,
+	// mirror cluster discovery is disabled. The on-demand filter must be enabled and placed before
+	// the router filter, including when ``odcds`` is not specified.
+	// Datadog-specific field; use a high number to avoid upstream collisions.
+	MirrorOdcds   *MirrorOnDemandCds `protobuf:"bytes,1000,opt,name=mirror_odcds,json=mirrorOdcds,proto3" json:"mirror_odcds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OnDemand) Reset() {
 	*x = OnDemand{}
-	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[1]
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -117,7 +241,7 @@ func (x *OnDemand) String() string {
 func (*OnDemand) ProtoMessage() {}
 
 func (x *OnDemand) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[1]
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -130,7 +254,7 @@ func (x *OnDemand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnDemand.ProtoReflect.Descriptor instead.
 func (*OnDemand) Descriptor() ([]byte, []int) {
-	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP(), []int{1}
+	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *OnDemand) GetOdcds() *OnDemandCds {
@@ -140,7 +264,17 @@ func (x *OnDemand) GetOdcds() *OnDemandCds {
 	return nil
 }
 
+func (x *OnDemand) GetMirrorOdcds() *MirrorOnDemandCds {
+	if x != nil {
+		return x.MirrorOdcds
+	}
+	return nil
+}
+
 // Per-route configuration for On Demand Discovery.
+// The most specific per-filter configuration replaces the entire filter configuration. Fields
+// are not merged. To enable cluster discovery for both the original request and its mirrors,
+// specify both “odcds“ and “mirror_odcds“.
 type PerRouteConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// An optional configuration for on-demand cluster discovery
@@ -149,14 +283,19 @@ type PerRouteConfig struct {
 	// request to an unknown cluster and will begin a cluster discovery
 	// process. When the discovery is finished (successfully or not), the
 	// request will be resumed for further processing.
-	Odcds         *OnDemandCds `protobuf:"bytes,1,opt,name=odcds,proto3" json:"odcds,omitempty"`
+	Odcds *OnDemandCds `protobuf:"bytes,1,opt,name=odcds,proto3" json:"odcds,omitempty"`
+	// An optional configuration for on-demand discovery of mirror clusters. If not specified,
+	// mirror cluster discovery is disabled. The on-demand filter must be enabled and placed before
+	// the router filter, including when ``odcds`` is not specified.
+	// Datadog-specific field; use a high number to avoid upstream collisions.
+	MirrorOdcds   *MirrorOnDemandCds `protobuf:"bytes,1000,opt,name=mirror_odcds,json=mirrorOdcds,proto3" json:"mirror_odcds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PerRouteConfig) Reset() {
 	*x = PerRouteConfig{}
-	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[2]
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +307,7 @@ func (x *PerRouteConfig) String() string {
 func (*PerRouteConfig) ProtoMessage() {}
 
 func (x *PerRouteConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[2]
+	mi := &file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +320,7 @@ func (x *PerRouteConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerRouteConfig.ProtoReflect.Descriptor instead.
 func (*PerRouteConfig) Descriptor() ([]byte, []int) {
-	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP(), []int{2}
+	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PerRouteConfig) GetOdcds() *OnDemandCds {
@@ -191,20 +330,34 @@ func (x *PerRouteConfig) GetOdcds() *OnDemandCds {
 	return nil
 }
 
+func (x *PerRouteConfig) GetMirrorOdcds() *MirrorOnDemandCds {
+	if x != nil {
+		return x.MirrorOdcds
+	}
+	return nil
+}
+
 var File_envoy_extensions_filters_http_on_demand_v3_on_demand_proto protoreflect.FileDescriptor
 
 const file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDesc = "" +
 	"\n" +
-	":envoy/extensions/filters/http/on_demand/v3/on_demand.proto\x12*envoy.extensions.filters.http.on_demand.v3\x1a(envoy/config/core/v3/config_source.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1dudpa/annotations/status.proto\x1a!udpa/annotations/versioning.proto\"\xab\x01\n" +
+	":envoy/extensions/filters/http/on_demand/v3/on_demand.proto\x12*envoy.extensions.filters.http.on_demand.v3\x1a(envoy/config/core/v3/config_source.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1dudpa/annotations/status.proto\x1a!udpa/annotations/versioning.proto\x1a\x17validate/validate.proto\"\xfb\x01\n" +
 	"\vOnDemandCds\x12:\n" +
 	"\x06source\x18\x01 \x01(\v2\".envoy.config.core.v3.ConfigSourceR\x06source\x12+\n" +
 	"\x11resources_locator\x18\x02 \x01(\tR\x10resourcesLocator\x123\n" +
-	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\x90\x01\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12N\n" +
+	"\x14max_pending_requests\x18\x04 \x01(\v2\x1c.google.protobuf.UInt32ValueR\x12maxPendingRequests\"\xc1\x01\n" +
+	"\x11MirrorOnDemandCds\x122\n" +
+	"\x0finherit_primary\x18\x01 \x01(\bB\a\xfaB\x04j\x02\b\x01H\x00R\x0einheritPrimary\x12Q\n" +
+	"\x06config\x18\x02 \x01(\v27.envoy.extensions.filters.http.on_demand.v3.OnDemandCdsH\x00R\x06configB\x15\n" +
+	"\x0edefault_policy\x12\x03\xf8B\x01J\x04\b\x03\x10\x04R\bdisabled\"\xf3\x01\n" +
 	"\bOnDemand\x12M\n" +
-	"\x05odcds\x18\x01 \x01(\v27.envoy.extensions.filters.http.on_demand.v3.OnDemandCdsR\x05odcds:5\x9aň\x1e0\n" +
-	".envoy.config.filter.http.on_demand.v2.OnDemand\"_\n" +
+	"\x05odcds\x18\x01 \x01(\v27.envoy.extensions.filters.http.on_demand.v3.OnDemandCdsR\x05odcds\x12a\n" +
+	"\fmirror_odcds\x18\xe8\a \x01(\v2=.envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCdsR\vmirrorOdcds:5\x9aň\x1e0\n" +
+	".envoy.config.filter.http.on_demand.v2.OnDemand\"\xc2\x01\n" +
 	"\x0ePerRouteConfig\x12M\n" +
-	"\x05odcds\x18\x01 \x01(\v27.envoy.extensions.filters.http.on_demand.v3.OnDemandCdsR\x05odcdsB\xb2\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
+	"\x05odcds\x18\x01 \x01(\v27.envoy.extensions.filters.http.on_demand.v3.OnDemandCdsR\x05odcds\x12a\n" +
+	"\fmirror_odcds\x18\xe8\a \x01(\v2=.envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCdsR\vmirrorOdcdsB\xb2\x01\xba\x80\xc8\xd1\x06\x02\x10\x02\n" +
 	"8io.envoyproxy.envoy.extensions.filters.http.on_demand.v3B\rOnDemandProtoP\x01Z]github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/on_demand/v3;on_demandv3b\x06proto3"
 
 var (
@@ -219,24 +372,30 @@ func file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescGZIP
 	return file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDescData
 }
 
-var file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_goTypes = []any{
-	(*OnDemandCds)(nil),         // 0: envoy.extensions.filters.http.on_demand.v3.OnDemandCds
-	(*OnDemand)(nil),            // 1: envoy.extensions.filters.http.on_demand.v3.OnDemand
-	(*PerRouteConfig)(nil),      // 2: envoy.extensions.filters.http.on_demand.v3.PerRouteConfig
-	(*v3.ConfigSource)(nil),     // 3: envoy.config.core.v3.ConfigSource
-	(*durationpb.Duration)(nil), // 4: google.protobuf.Duration
+	(*OnDemandCds)(nil),            // 0: envoy.extensions.filters.http.on_demand.v3.OnDemandCds
+	(*MirrorOnDemandCds)(nil),      // 1: envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCds
+	(*OnDemand)(nil),               // 2: envoy.extensions.filters.http.on_demand.v3.OnDemand
+	(*PerRouteConfig)(nil),         // 3: envoy.extensions.filters.http.on_demand.v3.PerRouteConfig
+	(*v3.ConfigSource)(nil),        // 4: envoy.config.core.v3.ConfigSource
+	(*durationpb.Duration)(nil),    // 5: google.protobuf.Duration
+	(*wrapperspb.UInt32Value)(nil), // 6: google.protobuf.UInt32Value
 }
 var file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_depIdxs = []int32{
-	3, // 0: envoy.extensions.filters.http.on_demand.v3.OnDemandCds.source:type_name -> envoy.config.core.v3.ConfigSource
-	4, // 1: envoy.extensions.filters.http.on_demand.v3.OnDemandCds.timeout:type_name -> google.protobuf.Duration
-	0, // 2: envoy.extensions.filters.http.on_demand.v3.OnDemand.odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.OnDemandCds
-	0, // 3: envoy.extensions.filters.http.on_demand.v3.PerRouteConfig.odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.OnDemandCds
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4, // 0: envoy.extensions.filters.http.on_demand.v3.OnDemandCds.source:type_name -> envoy.config.core.v3.ConfigSource
+	5, // 1: envoy.extensions.filters.http.on_demand.v3.OnDemandCds.timeout:type_name -> google.protobuf.Duration
+	6, // 2: envoy.extensions.filters.http.on_demand.v3.OnDemandCds.max_pending_requests:type_name -> google.protobuf.UInt32Value
+	0, // 3: envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCds.config:type_name -> envoy.extensions.filters.http.on_demand.v3.OnDemandCds
+	0, // 4: envoy.extensions.filters.http.on_demand.v3.OnDemand.odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.OnDemandCds
+	1, // 5: envoy.extensions.filters.http.on_demand.v3.OnDemand.mirror_odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCds
+	0, // 6: envoy.extensions.filters.http.on_demand.v3.PerRouteConfig.odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.OnDemandCds
+	1, // 7: envoy.extensions.filters.http.on_demand.v3.PerRouteConfig.mirror_odcds:type_name -> envoy.extensions.filters.http.on_demand.v3.MirrorOnDemandCds
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_init() }
@@ -244,13 +403,17 @@ func file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_init() {
 	if File_envoy_extensions_filters_http_on_demand_v3_on_demand_proto != nil {
 		return
 	}
+	file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_msgTypes[1].OneofWrappers = []any{
+		(*MirrorOnDemandCds_InheritPrimary)(nil),
+		(*MirrorOnDemandCds_Config)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDesc), len(file_envoy_extensions_filters_http_on_demand_v3_on_demand_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
