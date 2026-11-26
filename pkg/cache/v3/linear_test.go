@@ -1674,3 +1674,72 @@ func TestIsSubscribedTo(t *testing.T) {
 	assert.False(t, isSubscribedTo(subExact, "c"))
 	assert.Empty(t, subExact.SubscribedPrefixes())
 }
+
+func TestLinearSotwFullStateDeletions(t *testing.T) {
+	// With WithSotwFullStateResponses, a deleted resource is expressed by its
+	// absence from a response (full-state semantics): the watcher receives a
+	// response with a new version and zero resources, instead of the response
+	// being suppressed.
+	cache := NewLinearCache(testType, WithLogger(log.NewTestLogger(t)), WithSotwFullStateResponses())
+	a := &endpoint.ClusterLoadAssignment{ClusterName: "a"}
+	err := cache.UpdateResource("a", a)
+	require.NoError(t, err)
+
+	w := make(chan Response, 1)
+	sotwReq := &Request{ResourceNames: []string{"a"}, TypeUrl: testType}
+	sotwSub := subFromRequest(sotwReq)
+	_, err = cache.CreateWatch(sotwReq, sotwSub, w)
+	require.NoError(t, err)
+	resp := verifyResponseResources(t, w, testType, cache.getVersion(), "a")
+	updateFromSotwResponse(resp, &sotwSub, sotwReq)
+
+	// ADS clients re-request after every response, carrying the returned
+	// resources forward; simulate that re-subscription.
+	w = make(chan Response, 1)
+	sotwReq.VersionInfo = cache.getVersion()
+	_, err = cache.CreateWatch(sotwReq, sotwSub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+
+	// Delete the resource: the watch must receive a zero-resource response with
+	// a new version (absence of the subscribed name = deletion), not silence.
+	err = cache.UpdateResources(nil, []string{"a"})
+	require.NoError(t, err)
+
+	select {
+	case resp := <-w:
+		dr, err := resp.GetDiscoveryResponse()
+		require.NoError(t, err)
+		assert.Empty(t, dr.Resources, "deleted resource must be expressed as absence")
+		version, err := resp.GetVersion()
+		require.NoError(t, err)
+		assert.NotEmpty(t, version, "removal response carries a distinct version")
+		// The deleted name must no longer count as returned, so a re-create of
+		// the resource is delivered as a fresh update.
+		assert.NotContains(t, resp.GetReturnedResources(), "a")
+		updateFromSotwResponse(resp, &sotwSub, sotwReq)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for removal response")
+	}
+
+	// ADS clients re-request after every response; simulate that re-subscription
+	// (the removed name is no longer in returned resources, so the re-add below
+	// is a fresh update to the client).
+	w = make(chan Response, 1)
+	sotwReq.VersionInfo = cache.getVersion()
+	_, err = cache.CreateWatch(sotwReq, sotwSub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+
+	// Re-adding the resource delivers a fresh response.
+	err = cache.UpdateResource("a", a)
+	require.NoError(t, err)
+	select {
+	case resp := <-w:
+		dr, err := resp.GetDiscoveryResponse()
+		require.NoError(t, err)
+		assert.Len(t, dr.Resources, 1)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for re-created resource response")
+	}
+}
