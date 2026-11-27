@@ -182,7 +182,7 @@ func isSubscribedTo(sub Subscription, resourceName string) bool {
 // The useResourceVersion argument defines what version type to use for resources:
 //   - if set to false versions are based on when resources were updated in the cache.
 //   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
-func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool, fullState bool) (updated, removed []string, err error) {
+func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion, fullState bool) (updated, removed []string, err error) {
 	var changedResources []string
 	var removedResources []string
 
