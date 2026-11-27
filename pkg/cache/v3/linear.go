@@ -84,6 +84,14 @@ type LinearCache struct {
 	// cache instances and avoid issues of version reuse.
 	versionPrefix string
 
+	// sotwFullState forces SotW watches to behave as full-state: every response
+	// includes all subscribed resources that exist, and an absent subscribed
+	// resource is a deletion. For custom resource types whose consumers declare
+	// AllResourcesRequiredInSotW (i.e. absence == deletion), this is the only way
+	// to notify deletions, since non-full-state SotW responses cannot express them
+	// (changedResources is empty on a deletion and the response is suppressed).
+	sotwFullState bool
+
 	watchCount int
 
 	log log.Logger
@@ -102,6 +110,18 @@ type LinearCacheOption func(*LinearCache)
 func WithVersionPrefix(prefix string) LinearCacheOption {
 	return func(cache *LinearCache) {
 		cache.versionPrefix = prefix
+	}
+}
+
+// WithSotwFullStateResponses makes SotW watches for this cache behave as
+// full-state: every response includes all subscribed resources that exist, and
+// a subscribed resource absent from a response is a deletion. Use for custom
+// resource types whose consumers treat absence as deletion
+// (AllResourcesRequiredInSotW), since non-full-state SotW responses cannot
+// express deletions.
+func WithSotwFullStateResponses() LinearCacheOption {
+	return func(cache *LinearCache) {
+		cache.sotwFullState = true
 	}
 }
 
@@ -162,7 +182,7 @@ func isSubscribedTo(sub Subscription, resourceName string) bool {
 // The useResourceVersion argument defines what version type to use for resources:
 //   - if set to false versions are based on when resources were updated in the cache.
 //   - if set to true versions are a stable property of the resource, with no regard to when it was added to the cache.
-func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion bool) (updated, removed []string, err error) {
+func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVersion, fullState bool) (updated, removed []string, err error) {
 	var changedResources []string
 	var removedResources []string
 
@@ -199,6 +219,14 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 		for resourceName := range sub.SubscribedResources() {
 			res, exists := cache.resources[resourceName]
 			if !exists {
+				// Full-state subscriptions treat an absent subscribed resource as a
+				// deletion: report it so the watch is notified (otherwise SotW
+				// responses cannot express deletions and the response is suppressed).
+				if fullState {
+					if _, known := knownVersions[resourceName]; known {
+						removedResources = append(removedResources, resourceName)
+					}
+				}
 				continue
 			}
 			knownVersion, known := knownVersions[resourceName]
@@ -261,7 +289,7 @@ func (cache *LinearCache) computeResourceChange(sub Subscription, useResourceVer
 
 func (cache *LinearCache) computeResponse(watch watch, replyEvenIfEmpty bool) (WatchResponse, error) {
 	sub := watch.getSubscription()
-	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion())
+	changedResources, removedResources, err := cache.computeResourceChange(sub, watch.useResourceVersion(), watch.sendFullStateResponses())
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +546,7 @@ func (cache *LinearCache) CreateWatch(request *Request, sub Subscription, value 
 		Request:            request,
 		Response:           value,
 		subscription:       sub,
-		fullStateResponses: ResourceRequiresFullStateInSotw(cache.typeURL),
+		fullStateResponses: cache.sotwFullState || ResourceRequiresFullStateInSotw(cache.typeURL),
 	}
 
 	cache.mu.Lock()
