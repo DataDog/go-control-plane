@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `WithSotwFullStateResponses` LinearCache option: lets non-LDS/CDS resource types opt in to full-state SotW responses so deletions are delivered as zero-resource version-bumped responses instead of being suppressed (#83)
+
 ## Release v0.11.0
 
 ### Added

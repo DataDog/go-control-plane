@@ -1743,3 +1743,107 @@ func TestLinearSotwFullStateDeletions(t *testing.T) {
 		t.Fatal("timed out waiting for re-created resource response")
 	}
 }
+
+// Without WithSotwFullStateResponses, SotW cannot express deletions on resource
+// types that are not part of ResourceRequiresFullStateInSotw: a pure deletion
+// leaves the watch silent, so an already-connected client keeps its last known
+// resources indefinitely. Guards the default behavior the option opts out of.
+func TestLinearSotwDeletionSuppressedWithoutFullState(t *testing.T) {
+	cache := NewLinearCache(testType, WithLogger(log.NewTestLogger(t)))
+	require.NoError(t, cache.UpdateResource("a", testResource("a")))
+
+	w := make(chan Response, 1)
+	req := &Request{ResourceNames: []string{"a"}, TypeUrl: testType}
+	sub := subFromRequest(req)
+	_, err := cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	resp := verifyResponseResources(t, w, testType, cache.getVersion(), "a")
+	updateFromSotwResponse(resp, &sub, req)
+
+	// ADS clients re-request after every response, carrying the returned
+	// resources forward; simulate that re-subscription.
+	w = make(chan Response, 1)
+	req.VersionInfo = cache.getVersion()
+	_, err = cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+
+	// The deletion must not produce a response on a non-full-state type.
+	require.NoError(t, cache.UpdateResources(nil, []string{"a"}))
+	mustBlock(t, w)
+}
+
+// With WithSotwFullStateResponses, every response includes all subscribed
+// resources that exist: deleting one of several subscribed resources delivers a
+// response containing only the survivors, with a bumped version, and the deleted
+// name stops counting as returned so a later re-create is a fresh update.
+func TestLinearSotwFullStatePartialDeletion(t *testing.T) {
+	cache := NewLinearCache(testType, WithLogger(log.NewTestLogger(t)), WithSotwFullStateResponses())
+	require.NoError(t, cache.UpdateResource("a", testResource("a")))
+	require.NoError(t, cache.UpdateResource("b", testResource("b")))
+
+	w := make(chan Response, 1)
+	req := &Request{ResourceNames: []string{"a", "b"}, TypeUrl: testType}
+	sub := subFromRequest(req)
+	_, err := cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	resp := verifyResponseResources(t, w, testType, cache.getVersion(), "a", "b")
+	updateFromSotwResponse(resp, &sub, req)
+
+	versionBefore := cache.getVersion()
+	w = make(chan Response, 1)
+	req.VersionInfo = versionBefore
+	_, err = cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+
+	require.NoError(t, cache.UpdateResources(nil, []string{"a"}))
+
+	resp = verifyResponseResources(t, w, testType, cache.getVersion(), "b")
+	version, err := resp.GetVersion()
+	require.NoError(t, err)
+	assert.NotEqual(t, versionBefore, version, "removal response carries a bumped version")
+	returned := resp.GetReturnedResources()
+	assert.NotContains(t, returned, "a", "deleted resource must no longer count as returned")
+	assert.Contains(t, returned, "b", "surviving resource still counts as returned")
+	updateFromSotwResponse(resp, &sub, req)
+
+	// Re-creating the deleted resource delivers it as a fresh update.
+	w = make(chan Response, 1)
+	req.VersionInfo = cache.getVersion()
+	_, err = cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+	require.NoError(t, cache.UpdateResource("a", testResource("a")))
+	verifyResponseResources(t, w, testType, cache.getVersion(), "a", "b")
+}
+
+// With WithSotwFullStateResponses, wildcard subscriptions on custom types are
+// notified of deletions as well: the response carries the full remaining state.
+func TestLinearSotwFullStateWildcardDeletion(t *testing.T) {
+	cache := NewLinearCache(testType, WithLogger(log.NewTestLogger(t)), WithSotwFullStateResponses())
+	require.NoError(t, cache.UpdateResource("a", testResource("a")))
+	require.NoError(t, cache.UpdateResource("b", testResource("b")))
+
+	w := make(chan Response, 1)
+	req := &Request{TypeUrl: testType} // no resource names: wildcard subscription
+	sub := subFromRequest(req)
+	_, err := cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	resp := verifyResponseResources(t, w, testType, cache.getVersion(), "a", "b")
+	updateFromSotwResponse(resp, &sub, req)
+
+	versionBefore := cache.getVersion()
+	w = make(chan Response, 1)
+	req.VersionInfo = versionBefore
+	_, err = cache.CreateWatch(req, sub, w)
+	require.NoError(t, err)
+	mustBlock(t, w)
+
+	require.NoError(t, cache.UpdateResources(nil, []string{"a"}))
+
+	resp = verifyResponseResources(t, w, testType, cache.getVersion(), "b")
+	version, err := resp.GetVersion()
+	require.NoError(t, err)
+	assert.NotEqual(t, versionBefore, version, "removal response carries a bumped version")
+}
